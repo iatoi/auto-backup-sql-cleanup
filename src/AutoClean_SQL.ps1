@@ -39,6 +39,14 @@ if (-not $ScriptRoot) {
 # File này PHẢI được tạo từ config.template.json và KHÔNG được commit lên Git
 $ConfigPath = Join-Path (Split-Path $ScriptRoot -Parent) "config\config.json"
 
+# Đường dẫn file log - ghi vào thư mục logs cùng cấp với src
+# File log được đặt tên theo ngày để dễ quản lý
+$LogDirectory = Join-Path (Split-Path $ScriptRoot -Parent) "logs"
+if (-not (Test-Path $LogDirectory)) {
+    New-Item -Path $LogDirectory -ItemType Directory -Force | Out-Null
+}
+$LogFilePath = Join-Path $LogDirectory "cleanup_$(Get-Date -Format 'yyyyMMdd').log"
+
 # ============================================================
 # PHẦN 2: HÀM TIỆN ÍCH - LOGGING
 # ============================================================
@@ -53,6 +61,7 @@ $ConfigPath = Join-Path (Split-Path $ScriptRoot -Parent) "config\config.json"
     - Error (Đỏ): Lỗi
     - Warning (Vàng): Cảnh báo  
     - Info (Cyan): Thông tin
+    Đồng thời ghi log vào file để debug
     
 .PARAMETER Message
     Nội dung thông báo cần ghi
@@ -78,24 +87,35 @@ function Write-Log {
     switch ($Level) {
         "Success" { 
             $Color = "Green"
-            $Prefix = "[✓ OK]"
+            $Prefix = "[OK]"
         }
         "Error" { 
             $Color = "Red"
-            $Prefix = "[✗ LỖI]"
+            $Prefix = "[ERROR]"
         }
         "Warning" { 
             $Color = "Yellow"
-            $Prefix = "[⚠ CẢNH BÁO]"
+            $Prefix = "[WARNING]"
         }
         "Info" { 
             $Color = "Cyan"
-            $Prefix = "[ℹ INFO]"
+            $Prefix = "[INFO]"
         }
     }
     
+    # Tạo dòng log
+    $LogLine = "[$Timestamp] $Prefix $Message"
+    
     # In ra console với màu sắc
-    Write-Host "[$Timestamp] $Prefix $Message" -ForegroundColor $Color
+    Write-Host $LogLine -ForegroundColor $Color
+    
+    # Ghi ra file log (append mode)
+    try {
+        Add-Content -Path $LogFilePath -Value $LogLine -Encoding UTF8 -ErrorAction SilentlyContinue
+    }
+    catch {
+        # Ignore errors khi ghi file log
+    }
 }
 
 # ============================================================
