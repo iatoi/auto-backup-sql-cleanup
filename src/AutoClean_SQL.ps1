@@ -380,6 +380,7 @@ function Invoke-CloudRecycleBinCleanup {
     # 2. Lấy Site ID
     $SiteId = Get-GraphSiteId -SiteUrl $SiteUrl -AccessToken $Token
     if (-not $SiteId) { return $Stats }
+    $SiteId = "$SiteId".Trim() # Clean SiteID
     Write-Log -Message "Site ID: $SiteId" -Level Info
 
     Write-Log -Message "========== BẮT ĐẦU NHIỆM VỤ B: DỌN DẸP CLOUD (GRAPH API) ==========" -Level Info
@@ -390,6 +391,8 @@ function Invoke-CloudRecycleBinCleanup {
     # Dọn dẹp First-Stage
     try {
         $QueryUrl = "$RecycleBinUrl?`$top=$RowLimit&`$orderby=deletedDateTime%20desc"
+        Write-Log -Message "Query URL: [$QueryUrl]" -Level Info
+        
         $Response = Invoke-RestMethod -Method Get -Uri $QueryUrl -Headers $Headers -ErrorAction Stop
         $Items = $Response.value
         
