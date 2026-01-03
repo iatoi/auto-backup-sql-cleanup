@@ -389,7 +389,7 @@ function Invoke-CloudRecycleBinCleanup {
     
     # Dọn dẹp First-Stage
     try {
-        $QueryUrl = "$RecycleBinUrl?`$top=$RowLimit&`$orderby=deletedDateTime desc"
+        $QueryUrl = "$RecycleBinUrl?`$top=$RowLimit&`$orderby=deletedDateTime%20desc"
         $Response = Invoke-RestMethod -Method Get -Uri $QueryUrl -Headers $Headers -ErrorAction Stop
         $Items = $Response.value
         
