@@ -1,0 +1,49 @@
+# ============================================================
+# .gitignore cho dự án Auto Backup SQL & OneDrive Cleanup
+# Mục đích: Bảo vệ thông tin nhạy cảm KHÔNG được push lên GitHub
+# ============================================================
+
+# -----------------------------
+# CONFIG VÀ CREDENTIALS (QUAN TRỌNG)
+# -----------------------------
+# File chứa Azure AD ClientSecret - TUYỆT ĐỐI KHÔNG COMMIT
+# Lưu ý: File config.json sẽ được tạo local nhưng KHÔNG được track bởi Git
+/config/config.json
+
+# Backup của file config
+config/*.bak
+config/*.backup
+
+# -----------------------------
+# POWERSHELL LOGS & TEMP FILES
+# -----------------------------
+*.log
+*.tmp
+*.temp
+
+# -----------------------------
+# WINDOWS SYSTEM FILES
+# -----------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# -----------------------------
+# IDE & EDITOR FILES
+# -----------------------------
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# -----------------------------
+# OS GENERATED FILES
+# -----------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
