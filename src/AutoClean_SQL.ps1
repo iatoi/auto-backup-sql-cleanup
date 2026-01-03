@@ -387,10 +387,12 @@ function Invoke-CloudRecycleBinCleanup {
     
     # API Endpoint cho Recycle Bin
     $RecycleBinUrl = "https://graph.microsoft.com/v1.0/sites/$SiteId/recycleBin"
+    Write-Log -Message "Debug RecycleBinUrl: [$RecycleBinUrl]" -Level Info
     
     # Dọn dẹp First-Stage
     try {
-        $QueryUrl = "$RecycleBinUrl?`$top=$RowLimit&`$orderby=deletedDateTime%20desc"
+        # Sử dụng format string để an toàn hơn
+        $QueryUrl = "{0}?`$top={1}&`$orderby=deletedDateTime%20desc" -f $RecycleBinUrl, $RowLimit
         Write-Log -Message "Query URL: [$QueryUrl]" -Level Info
         
         $Response = Invoke-RestMethod -Method Get -Uri $QueryUrl -Headers $Headers -ErrorAction Stop
