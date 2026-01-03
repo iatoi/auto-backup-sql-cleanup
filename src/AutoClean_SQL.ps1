@@ -5,15 +5,15 @@
 .DESCRIPTION
     Script PowerShell Core (v7+) để quản lý backup SQL Server:
     - Nhiệm vụ A: Dọn dẹp file backup local cũ hơn 5 tiếng (300 phút)
-    - Nhiệm vụ B: Quản lý thùng rác OneDrive qua PnP.PowerShell API
-        + Purge Second-Stage Recycle Bin (xóa sạch ngay lập tức)
+    - Nhiệm vụ B: Quản lý thùng rác OneDrive qua Microsoft Graph API
+        + Purge Second-Stage Recycle Bin
         + Dọn dẹp First-Stage items > 3 ngày
     
 .NOTES
     Tác giả: BFC DevOps Team
-    Phiên bản: 1.0.0
+    Phiên bản: 2.0.0
     Ngày tạo: 2026-01-04
-    Yêu cầu: PowerShell 7+, Module PnP.PowerShell
+    Yêu cầu: PowerShell 7+
     
 .EXAMPLE
     pwsh -File .\AutoClean_SQL.ps1
@@ -157,6 +157,7 @@ function Read-Configuration {
         $Config = $ConfigContent | ConvertFrom-Json
         
         # Validate các trường bắt buộc
+        # Kiểm tra TenantId - rất quan trọng cho Graph API
         $RequiredFields = @(
             @{ Path = "AzureAD.TenantId"; Value = $Config.AzureAD.TenantId },
             @{ Path = "AzureAD.ClientId"; Value = $Config.AzureAD.ClientId },
@@ -167,7 +168,7 @@ function Read-Configuration {
         
         foreach ($Field in $RequiredFields) {
             if ([string]::IsNullOrWhiteSpace($Field.Value) -or $Field.Value -like "*xxxx*" -or $Field.Value -like "*your-*") {
-                Write-Log -Message "Trường '$($Field.Path)' chưa được cấu hình trong config.json" -Level Error
+                Write-Log -Message "Trường '$($Field.Path)' chưa được cấu hình (hoặc vẫn là giá trị mẫu) trong config.json" -Level Error
                 return $null
             }
         }
@@ -238,7 +239,6 @@ function Invoke-LocalBackupCleanup {
     $Stats = @{ Deleted = 0; Failed = 0; Skipped = 0 }
     
     # Tạo filter pattern từ danh sách extension
-    # Ví dụ: *.bak, *.zip, *.7z
     $FilePatterns = $Extensions | ForEach-Object { "*$_" }
     
     # Quét và xử lý từng file
@@ -250,7 +250,6 @@ function Invoke-LocalBackupCleanup {
             if ($File.LastWriteTime -lt $CutoffTime) {
                 try {
                     # Xóa file với SilentlyContinue để bỏ qua nếu file đang bị khóa
-                    # Điều này xảy ra khi SQL Server đang ghi vào file backup
                     Remove-Item -Path $File.FullName -Force -ErrorAction Stop
                     Write-Log -Message "Đã xóa: $($File.Name) (Tuổi: $([math]::Round(((Get-Date) - $File.LastWriteTime).TotalMinutes)) phút)" -Level Success
                     $Stats.Deleted++
@@ -277,292 +276,202 @@ function Invoke-LocalBackupCleanup {
 }
 
 # ============================================================
-# PHẦN 5: NHIỆM VỤ B - DỌN DẸP CLOUD (ONEDRIVE API)
+# PHẦN 5: NHIỆM VỤ B - DỌN DẸP CLOUD (MICROSOFT GRAPH API)
 # ============================================================
 
 <#
 .SYNOPSIS
-    Kết nối đến OneDrive sử dụng Azure AD App Registration
-    
-.DESCRIPTION
-    Sử dụng PnP.PowerShell module để kết nối đến SharePoint/OneDrive
-    với xác thực Client Credentials (không cần interactive login)
-    Phù hợp để chạy trên Task Scheduler
-    
-.PARAMETER TenantId
-    Azure AD Tenant ID (GUID hoặc domain)
-
-.PARAMETER ClientId
-    Client ID của Azure AD App Registration
-
-.PARAMETER ClientSecret
-    Client Secret của Azure AD App Registration
-
-.PARAMETER SiteUrl
-    URL của OneDrive site (personal site)
+    Lấy Access Token từ Azure AD
 #>
-function Connect-OneDriveService {
-    [CmdletBinding()]
+function Get-GraphAccessToken {
     param (
-        [Parameter(Mandatory = $true)]
-        [string]$ClientId,
-        
-        [Parameter(Mandatory = $true)]
-        [string]$ClientSecret,
-        
-        [Parameter(Mandatory = $true)]
-        [string]$SiteUrl
+        $TenantId,
+        $ClientId,
+        $ClientSecret
     )
     
-    Write-Log -Message "Đang kết nối đến OneDrive..." -Level Info
-    Write-Log -Message "Site URL: $SiteUrl" -Level Info
-    # KHÔNG log ClientSecret vì lý do bảo mật!
+    $TokenUrl = "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token"
+    $Body = @{
+        grant_type    = "client_credentials"
+        client_id     = $ClientId
+        client_secret = $ClientSecret
+        scope         = "https://graph.microsoft.com/.default"
+    }
     
     try {
-        # Kiểm tra module PnP.PowerShell đã được cài đặt chưa
-        if (-not (Get-Module -ListAvailable -Name "PnP.PowerShell")) {
-            Write-Log -Message "Module PnP.PowerShell chưa được cài đặt" -Level Error
-            Write-Log -Message "Chạy lệnh: Install-Module -Name PnP.PowerShell -Scope CurrentUser -Force" -Level Warning
-            return $false
-        }
-        
-        # Import module
-        Import-Module PnP.PowerShell -ErrorAction Stop
-        
-        # Kết nối sử dụng Client Credentials flow (ACS Authentication)
-        # LƯU Ý: Đây là legacy ACS authentication, chỉ hoạt động với SharePoint API
-        # Không cần interactive login - phù hợp cho Task Scheduler
-        # ClientSecret được truyền trực tiếp dạng plain string
-        Connect-PnPOnline -Url $SiteUrl `
-            -ClientId $ClientId `
-            -ClientSecret $ClientSecret `
-            -ErrorAction Stop
-        
-        Write-Log -Message "Kết nối OneDrive thành công!" -Level Success
-        return $true
-        
+        Write-Log -Message "Đang lấy Access Token từ Azure AD..." -Level Info
+        $Response = Invoke-RestMethod -Method Post -Uri $TokenUrl -Body $Body -ErrorAction Stop
+        return $Response.access_token
     }
     catch {
-        Write-Log -Message "Lỗi kết nối OneDrive: $($_.Exception.Message)" -Level Error
-        return $false
+        Write-Log -Message "Lỗi lấy Token: $($_.Exception.Message)" -Level Error
+        if ($_.Exception.Message -match "client_secret") {
+            Write-Log -Message "GỢI Ý: Client Secret có thể bị sai." -Level Warning
+        }
+        if ($_.Exception.Message -match "client_id") {
+            Write-Log -Message "GỢI Ý: Client ID có thể bị sai." -Level Warning
+        }
+        return $null
     }
 }
 
 <#
 .SYNOPSIS
-    Dọn dẹp thùng rác OneDrive (Second-Stage và First-Stage)
+    Lấy Site ID từ URL thông qua Graph API
+#>
+function Get-GraphSiteId {
+    param (
+        $SiteUrl,
+        $AccessToken
+    )
     
-.DESCRIPTION
-    Thực hiện 2 nhiệm vụ:
-    1. Purge Second-Stage Recycle Bin: Xóa sạch ngay lập tức để giải phóng dung lượng
-    2. Dọn dẹp First-Stage: Chỉ xóa các items đã nằm trong thùng rác > 3 ngày
+    # Phân tích URL để lấy Hostname và SitePath
+    # Ví dụ: https://bfchem-my.sharepoint.com/personal/user_domain_com
+    # Hostname: bfchem-my.sharepoint.com
+    # Path: /personal/user_domain_com
     
-.PARAMETER FirstStageRetentionDays
-    Số ngày giữ lại items trong First-Stage (mặc định 3)
+    try {
+        $Uri = [System.Uri]$SiteUrl
+        $Hostname = $Uri.Host
+        $SitePath = $Uri.AbsolutePath.TrimEnd('/') # Bỏ dấu / ở cuối nếu có
+        
+        Write-Log -Message "Đang tìm Site ID cho: $Hostname$SitePath" -Level Info
+        
+        $GraphUrl = "https://graph.microsoft.com/v1.0/sites/$Hostname`:$SitePath"
+        $Headers = @{ Authorization = "Bearer $AccessToken" }
+        
+        $Response = Invoke-RestMethod -Method Get -Uri $GraphUrl -Headers $Headers -ErrorAction Stop
+        return $Response.id
+    }
+    catch {
+        Write-Log -Message "Không tìm thấy Site ID. Kiểm tra lại Site URL trong config!" -Level Error
+        return $null
+    }
+}
 
-.PARAMETER RowLimit
-    Số lượng items tối đa xử lý mỗi lần (mặc định 5000)
+<#
+.SYNOPSIS
+    Dọn dẹp Cloud Recycle Bin dùng Graph API
 #>
 function Invoke-CloudRecycleBinCleanup {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $false)]
-        [int]$FirstStageRetentionDays = 3,
-        
-        [Parameter(Mandatory = $false)]
-        [int]$RowLimit = 5000
+        $TenantId,
+        $ClientId,
+        $ClientSecret,
+        $SiteUrl,
+        $FirstStageRetentionDays = 3,
+        $RowLimit = 5000
     )
+
+    $Stats = @{ FirstStageDeleted = 0; FirstStageKept = 0; Errors = 0 }
+
+    # 1. Lấy Token
+    $Token = Get-GraphAccessToken -TenantId $TenantId -ClientId $ClientId -ClientSecret $ClientSecret
+    if (-not $Token) { return $Stats }
+    $Headers = @{ Authorization = "Bearer $Token" }
     
-    Write-Log -Message "========== BẮT ĐẦU NHIỆM VỤ B: DỌN DẸP CLOUD ==========" -Level Info
+    # 2. Lấy Site ID
+    $SiteId = Get-GraphSiteId -SiteUrl $SiteUrl -AccessToken $Token
+    if (-not $SiteId) { return $Stats }
+    Write-Log -Message "Site ID: $SiteId" -Level Info
+
+    Write-Log -Message "========== BẮT ĐẦU NHIỆM VỤ B: DỌN DẸP CLOUD (GRAPH API) ==========" -Level Info
     
-    $Stats = @{
-        SecondStagePurged = $false
-        FirstStageDeleted = 0
-        FirstStageSkipped = 0
-        Errors            = 0
-    }
+    # API Endpoint cho Recycle Bin
+    $RecycleBinUrl = "https://graph.microsoft.com/v1.0/sites/$SiteId/recycleBin"
     
-    # ---------------------------------------------------------
-    # LOGIC 1: PURGE SECOND-STAGE RECYCLE BIN
-    # Second-Stage là thùng rác cấp 2 (Site Collection Recycle Bin)
-    # Xóa sạch để giải phóng dung lượng 1TB
-    # ---------------------------------------------------------
-    
-    Write-Log -Message "--- Logic 1: Purge Second-Stage Recycle Bin ---" -Level Info
-    
+    # Dọn dẹp First-Stage
     try {
-        # Lấy danh sách items trong Second-Stage (thùng rác cấp 2)
-        # Second-Stage items có ItemState = 'SecondStageRecycleBin'
-        $SecondStageItems = Get-PnPRecycleBinItem -RowLimit $RowLimit -ErrorAction Stop | 
-        Where-Object { $_.ItemState -eq 'SecondStageRecycleBin' }
-        $SecondStageCount = ($SecondStageItems | Measure-Object).Count
+        $QueryUrl = "$RecycleBinUrl?`$top=$RowLimit&`$orderby=deletedDateTime desc"
+        $Response = Invoke-RestMethod -Method Get -Uri $QueryUrl -Headers $Headers -ErrorAction Stop
+        $Items = $Response.value
         
-        if ($SecondStageCount -gt 0) {
-            Write-Log -Message "Tìm thấy $SecondStageCount items trong Second-Stage Recycle Bin" -Level Info
-            
-            # Xóa từng item trong Second-Stage
-            foreach ($Item in $SecondStageItems) {
-                try {
-                    Clear-PnPRecycleBinItem -Identity $Item.Id -Force -ErrorAction Stop
-                }
-                catch {
-                    # Ignore individual item errors, count at the end
-                }
-            }
-            
-            Write-Log -Message "Đã purge $SecondStageCount items từ Second-Stage" -Level Success
-            $Stats.SecondStagePurged = $true
+        $CutoffDate = (Get-Date).AddDays(-$FirstStageRetentionDays)
+        Write-Log -Message "Ngưỡng xóa: Items xóa trước $CutoffDate" -Level Info
+        
+        if ($Items.Count -eq 0) {
+            Write-Log -Message "Thùng rác trống." -Level Info
         }
         else {
-            Write-Log -Message "Second-Stage Recycle Bin đã trống" -Level Info
-        }
-        
-    }
-    catch {
-        Write-Log -Message "Lỗi xử lý Second-Stage: $($_.Exception.Message)" -Level Error
-        $Stats.Errors++
-    }
-    
-    # ---------------------------------------------------------
-    # LOGIC 2: DỌN DẸP FIRST-STAGE RECYCLE BIN
-    # Chỉ xóa các items đã nằm trong thùng rác > 3 ngày
-    # Giữ lại items mới xóa (< 3 ngày) để an toàn
-    # ---------------------------------------------------------
-    
-    Write-Log -Message "--- Logic 2: Dọn dẹp First-Stage (items > $FirstStageRetentionDays ngày) ---" -Level Info
-    
-    try {
-        # Lấy danh sách items trong First-Stage (thùng rác thông thường)
-        # First-Stage items có ItemState = 'FirstStageRecycleBin'
-        $FirstStageItems = Get-PnPRecycleBinItem -RowLimit $RowLimit -ErrorAction Stop | 
-        Where-Object { $_.ItemState -eq 'FirstStageRecycleBin' }
-        $FirstStageCount = ($FirstStageItems | Measure-Object).Count
-        
-        if ($FirstStageCount -eq 0) {
-            Write-Log -Message "First-Stage Recycle Bin đã trống" -Level Info
-        }
-        else {
-            Write-Log -Message "Tìm thấy $FirstStageCount items trong First-Stage Recycle Bin" -Level Info
+            Write-Log -Message "Tìm thấy $($Items.Count) items trong thùng rác..." -Level Info
             
-            # Tính thời điểm ngưỡng: items xóa trước thời điểm này sẽ bị purge
-            $CutoffDate = (Get-Date).AddDays(-$FirstStageRetentionDays)
-            Write-Log -Message "Xóa các items bị xóa trước: $($CutoffDate.ToString('yyyy-MM-dd HH:mm:ss'))" -Level Info
-            
-            # Xử lý từng item
-            foreach ($Item in $FirstStageItems) {
-                # DeletedDate là thời điểm item bị đưa vào thùng rác
-                if ($Item.DeletedDate -lt $CutoffDate) {
+            foreach ($Item in $Items) {
+                # Kiểm tra ngày xóa
+                $DeletedDate = [DateTime]$Item.deletedDateTime
+                
+                if ($DeletedDate -lt $CutoffDate) {
                     try {
-                        # Xóa vĩnh viễn item này
-                        # Item sẽ không thể khôi phục sau bước này
-                        Clear-PnPRecycleBinItem -Identity $Item.Id -Force -ErrorAction Stop
-                        Write-Log -Message "Đã xóa: $($Item.Title) (Trong thùng rác: $([math]::Round(((Get-Date) - $Item.DeletedDate).TotalDays, 1)) ngày)" -Level Success
-                        $Stats.FirstStageDeleted++
+                        # DELETE /sites/{site-id}/recycleBin/{item-id}
+                        # Đây là hành động purge (xóa vĩnh viễn) trong Graph API
+                        $DeleteUrl = "$RecycleBinUrl/$($Item.id)"
+                        Invoke-RestMethod -Method Delete -Uri $DeleteUrl -Headers $Headers -ErrorAction Stop
                         
+                        Write-Log -Message "Đã xóa vĩnh viễn: $($Item.name) (Đã xóa $FirstStageRetentionDays+ ngày)" -Level Success
+                        $Stats.FirstStageDeleted++
                     }
                     catch {
-                        Write-Log -Message "Không thể xóa: $($Item.Title) - $($_.Exception.Message)" -Level Warning
                         $Stats.Errors++
+                        Write-Log -Message "Lỗi xóa item $($Item.id): $($_.Exception.Message)" -Level Error
                     }
                 }
                 else {
-                    # Item còn mới (< 3 ngày), giữ lại để an toàn
-                    $Stats.FirstStageSkipped++
+                    $Stats.FirstStageKept++
                 }
             }
         }
         
     }
     catch {
-        Write-Log -Message "Lỗi xử lý First-Stage: $($_.Exception.Message)" -Level Error
-        $Stats.Errors++
+        Write-Log -Message "Lỗi khi lấy danh sách Recycle Bin: $($_.Exception.Message)" -Level Error
+        if ($_.Exception.Response.StatusCode -eq "Forbidden") {
+            Write-Log -Message "GỢI Ý: Kiểm tra lại quyền API 'Sites.FullControl.All' trong Azure Portal (API Permissions)." -Level Warning
+            Write-Log -Message "Lưu ý: User-delegated permissions không hoạt động ở đây, phải là APPLICATION permissions." -Level Info
+        }
     }
     
-    # Tổng kết
     Write-Log -Message "Kết quả Cloud Cleanup:" -Level Info
-    Write-Log -Message "  - Second-Stage: $(if($Stats.SecondStagePurged){'Đã purge'}else{'Không có thay đổi'})" -Level Info
-    Write-Log -Message "  - First-Stage: Xóa=$($Stats.FirstStageDeleted), Giữ lại=$($Stats.FirstStageSkipped), Lỗi=$($Stats.Errors)" -Level Info
+    Write-Log -Message "  - Đã xóa vĩnh viễn: $($Stats.FirstStageDeleted) items" -Level Info
+    Write-Log -Message "  - Giữ lại (an toàn): $($Stats.FirstStageKept) items" -Level Info
+    Write-Log -Message "  - Lỗi: $($Stats.Errors) items" -Level Info
     Write-Log -Message "========== KẾT THÚC NHIỆM VỤ B ==========" -Level Info
     
     return $Stats
 }
 
-<#
-.SYNOPSIS
-    Ngắt kết nối OneDrive
-    
-.DESCRIPTION
-    Đóng connection đến SharePoint/OneDrive
-    Nên gọi sau khi hoàn thành công việc để giải phóng tài nguyên
-#>
-function Disconnect-OneDriveService {
-    try {
-        Disconnect-PnPOnline -ErrorAction SilentlyContinue
-        Write-Log -Message "Đã ngắt kết nối OneDrive" -Level Info
-    }
-    catch {
-        # Ignore errors khi disconnect
-    }
-}
-
 # ============================================================
-# PHẦN 6: MAIN - ĐIỂM KHỞI CHẠY CHÍNH
+# PHẦN 6: MAIN SCRIPT EXECUTION
 # ============================================================
 
-<#
-.SYNOPSIS
-    Hàm chính điều phối toàn bộ workflow
-    
-.DESCRIPTION
-    Thực hiện tuần tự:
-    1. Đọc cấu hình từ config.json
-    2. Chạy Nhiệm vụ A: Dọn dẹp Local Backup
-    3. Chạy Nhiệm vụ B: Dọn dẹp Cloud Recycle Bin
-    4. Tổng kết và cleanup
-#>
 function Invoke-AutoCleanup {
     Write-Log -Message "╔════════════════════════════════════════════════════════════╗" -Level Info
-    Write-Log -Message "║   AUTO BACKUP SQL CLEANUP - BFC SYSTEM                    ║" -Level Info
-    Write-Log -Message "║   Phiên bản: 1.0.0 | Ngày: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')    ║" -Level Info
+    Write-Log -Message "║   AUTO BACKUP SQL CLEANUP - BFC SYSTEM (GRAPH API)       ║" -Level Info
+    Write-Log -Message "║   Phiên bản: 2.0.0 | Ngày: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')    ║" -Level Info
     Write-Log -Message "╚════════════════════════════════════════════════════════════╝" -Level Info
-    
-    # Bước 1: Load cấu hình
+
+    # Bước 1: Đọc Config
     Write-Log -Message "Bước 1: Đọc cấu hình..." -Level Info
     $Config = Read-Configuration -ConfigFilePath $ConfigPath
-    
-    if ($null -eq $Config) {
-        Write-Log -Message "Không thể tiếp tục do lỗi cấu hình. Dừng script." -Level Error
-        exit 1
-    }
-    
-    # Bước 2: Chạy Nhiệm vụ A - Dọn dẹp Local
+    if (-not $Config) { return }
+
+    # Bước 2: Local Cleanup
     Write-Log -Message "`nBước 2: Thực hiện dọn dẹp Local..." -Level Info
     $LocalStats = Invoke-LocalBackupCleanup `
         -BackupPath $Config.LocalBackup.Path `
         -RetentionMinutes $Config.LocalBackup.RetentionMinutes `
         -Extensions $Config.LocalBackup.Extensions
+        
+    # Bước 3: Cloud Cleanup (Graph API)
+    Write-Log -Message "`nBước 3: Thực hiện dọn dẹp Cloud (Microsoft Graph)..." -Level Info
     
-    # Bước 3: Chạy Nhiệm vụ B - Dọn dẹp Cloud
-    Write-Log -Message "`nBước 3: Thực hiện dọn dẹp Cloud..." -Level Info
-    
-    $Connected = Connect-OneDriveService `
+    $CloudStats = Invoke-CloudRecycleBinCleanup `
+        -TenantId $Config.AzureAD.TenantId `
         -ClientId $Config.AzureAD.ClientId `
         -ClientSecret $Config.AzureAD.ClientSecret `
-        -SiteUrl $Config.OneDrive.SiteUrl
-    
-    if ($Connected) {
-        $CloudStats = Invoke-CloudRecycleBinCleanup `
-            -FirstStageRetentionDays $Config.CloudRecycleBin.FirstStageRetentionDays `
-            -RowLimit $Config.CloudRecycleBin.RowLimit
+        -SiteUrl $Config.OneDrive.SiteUrl `
+        -FirstStageRetentionDays $Config.CloudRecycleBin.FirstStageRetentionDays `
+        -RowLimit $Config.CloudRecycleBin.RowLimit
         
-        # Đóng kết nối
-        Disconnect-OneDriveService
-    }
-    else {
-        Write-Log -Message "Bỏ qua dọn dẹp Cloud do không thể kết nối" -Level Warning
-        $CloudStats = @{ SecondStagePurged = $false; FirstStageDeleted = 0; FirstStageSkipped = 0; Errors = 1 }
-    }
-    
     # Bước 4: Tổng kết
     Write-Log -Message "`n╔════════════════════════════════════════════════════════════╗" -Level Info
     Write-Log -Message "║                    TỔNG KẾT KẾT QUẢ                        ║" -Level Info
@@ -573,18 +482,12 @@ function Invoke-AutoCleanup {
     Write-Log -Message "║   - Lỗi: $($LocalStats.Failed) files                       ║" -Level Info
     Write-Log -Message "╠════════════════════════════════════════════════════════════╣" -Level Info
     Write-Log -Message "║ CLOUD CLEANUP:                                             ║" -Level Info
-    Write-Log -Message "║   - Second-Stage: $(if($CloudStats.SecondStagePurged){'Đã purge'}else{'Không thay đổi'})                              ║" -Level Info
-    Write-Log -Message "║   - First-Stage xóa: $($CloudStats.FirstStageDeleted) items║" -Level Info
-    Write-Log -Message "║   - First-Stage giữ: $($CloudStats.FirstStageSkipped) items║" -Level Info
+    Write-Log -Message "║   - Đã xóa: $($CloudStats.FirstStageDeleted) items         ║" -Level Info
+    Write-Log -Message "║   - Giữ lại: $($CloudStats.FirstStageKept) items           ║" -Level Info
     Write-Log -Message "╚════════════════════════════════════════════════════════════╝" -Level Info
     
-    Write-Log -Message "Script hoàn thành lúc $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Level Success
+    Write-Log -Message "`nScript hoàn thành lúc $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Level Success
 }
 
-# ============================================================
-# ĐIỂM KHỞI CHẠY
-# ============================================================
-# Chỉ chạy khi script được gọi trực tiếp (không phải import)
-if ($MyInvocation.InvocationName -ne '.') {
-    Invoke-AutoCleanup
-}
+# --- CHẠY MAIN FUNCTION ---
+Invoke-AutoCleanup
