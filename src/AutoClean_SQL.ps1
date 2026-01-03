@@ -344,7 +344,13 @@ function Get-GraphSiteId {
         return $Response.id
     }
     catch {
-        Write-Log -Message "Không tìm thấy Site ID. Kiểm tra lại Site URL trong config!" -Level Error
+        Write-Log -Message "Lỗi lấy Site ID: $($_.Exception.Message)" -Level Error
+        if ($_.Exception.Response.StatusCode -eq "Forbidden") {
+            Write-Log -Message "GỢI Ý: App chưa có quyền 'Sites.FullControl.All' hoặc chưa Grant Admin Consent." -Level Warning
+        }
+        if ($_.Exception.Response.StatusCode -eq "NotFound") {
+            Write-Log -Message "GỢI Ý: Site URL không đúng hoặc không tồn tại." -Level Warning
+        }
         return $null
     }
 }
