@@ -564,6 +564,53 @@ function Get-OneDriveStorageQuota {
     return $null
 }
 
+<#
+.SYNOPSIS
+    Lấy danh sách 10 files backup mới nhất trên OneDrive folder
+#>
+function Get-OneDriveBackupFiles {
+    param (
+        $TenantId,
+        $ClientId,
+        $ClientSecret,
+        $SiteUrl,
+        $BackupFolderPath = "BFC Information - Backup.SQL"
+    )
+    
+    try {
+        # Lấy Token
+        $Token = Get-GraphAccessToken -TenantId $TenantId -ClientId $ClientId -ClientSecret $ClientSecret
+        if (-not $Token) { return $null }
+        
+        # Lấy Site ID
+        $SiteId = Get-GraphSiteId -SiteUrl $SiteUrl -AccessToken $Token
+        if (-not $SiteId) { return $null }
+        $SiteId = "$SiteId".Trim()
+        
+        $Headers = @{ Authorization = "Bearer $Token" }
+        
+        # Lấy danh sách files trong folder (sắp xếp theo lastModifiedDateTime giảm dần)
+        $FilesUrl = "https://graph.microsoft.com/v1.0/sites/$SiteId/drive/root:/$BackupFolderPath`:/children?`$top=10&`$orderby=lastModifiedDateTime%20desc&`$select=name,lastModifiedDateTime,size"
+        
+        $Response = Invoke-RestMethod -Method Get -Uri $FilesUrl -Headers $Headers -ErrorAction Stop
+        
+        $Files = @()
+        foreach ($Item in $Response.value) {
+            $Files += @{
+                Name   = $Item.name
+                Date   = ([DateTime]$Item.lastModifiedDateTime).ToString("dd/MM HH:mm")
+                SizeMB = [math]::Round($Item.size / 1MB, 1)
+            }
+        }
+        
+        return $Files
+    }
+    catch {
+        Write-Log -Message "Lỗi lấy danh sách files OneDrive: $($_.Exception.Message)" -Level Warning
+        return $null
+    }
+}
+
 # ============================================================
 # PHẦN 7: THÔNG BÁO TELEGRAM
 # ============================================================
@@ -677,8 +724,15 @@ function Invoke-AutoCleanup {
             Write-Log -Message "⚠️ CẢNH BÁO: Dung lượng đã vượt $WarningThreshold%! Cần dọn Second-Stage Recycle Bin!" -Level Warning
         }
     }
+    
+    # Bước 5: Lấy danh sách files backup đang có trên OneDrive
+    $OneDriveFiles = Get-OneDriveBackupFiles `
+        -TenantId $Config.AzureAD.TenantId `
+        -ClientId $Config.AzureAD.ClientId `
+        -ClientSecret $Config.AzureAD.ClientSecret `
+        -SiteUrl $Config.OneDrive.SiteUrl
         
-    # Bước 5: Tổng kết
+    # Bước 6: Tổng kết
     Write-Log -Message "`n╔════════════════════════════════════════════════════════════╗" -Level Info
     Write-Log -Message "║                    TỔNG KẾT KẾT QUẢ                        ║" -Level Info
     Write-Log -Message "╠════════════════════════════════════════════════════════════╣" -Level Info
@@ -720,12 +774,24 @@ $StorageIcon *DUNG LƯỢNG:* $($StorageQuota.RemainingGB) GB còn trống
 "@
         }
         
+        # Tạo danh sách files đang có trên OneDrive folder
+        $OneDriveFilesSection = ""
+        if ($OneDriveFiles -and $OneDriveFiles.Count -gt 0) {
+            $OneDriveFilesSection = "`n`n*📂 BACKUP TRÊN ONEDRIVE:*"
+            foreach ($File in $OneDriveFiles) {
+                $ShortName = $File.Name
+                if ($ShortName.Length -gt 35) {
+                    $ShortName = $ShortName.Substring(0, 32) + "..."
+                }
+                $OneDriveFilesSection += "`n• $($File.Date): $ShortName"
+            }
+        }
+        
         # Tạo danh sách files giữ lại trong RECYCLE BIN (< 3 ngày)
         $KeptFilesSection = ""
         if ($CloudStats.KeptItemsList -and $CloudStats.KeptItemsList.Count -gt 0) {
-            $KeptFilesSection = "`n`n*�️ RECYCLE BIN GIỮ LẠI (<3 ngày):*"
+            $KeptFilesSection = "`n`n*🗑 RECYCLE BIN GIỮ LẠI (<3 ngày):*"
             foreach ($KeptItem in $CloudStats.KeptItemsList) {
-                # Rút gọn tên file nếu quá dài
                 $ShortName = $KeptItem.Name
                 if ($ShortName.Length -gt 35) {
                     $ShortName = $ShortName.Substring(0, 32) + "..."
@@ -744,6 +810,7 @@ $StorageSection
 
 *📁 LOCAL:* Xóa $($LocalStats.Deleted) | Giữ $($LocalStats.Skipped) | Lỗi $($LocalStats.Failed)
 *☁️ CLOUD:* Xóa $($CloudStats.FirstStageDeleted) | Giữ $($CloudStats.FirstStageKept) | Lỗi $($CloudStats.Errors)
+$OneDriveFilesSection
 $KeptFilesSection
 "@
         
