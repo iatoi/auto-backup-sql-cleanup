@@ -408,27 +408,62 @@ function Invoke-CloudRecycleBinCleanup {
         else {
             Write-Log -Message "Tìm thấy $($Items.Count) items trong thùng rác..." -Level Info
             
+            # Thu thập IDs của items cần xóa (đã quá hạn retention)
+            $IdsToDelete = @()
+            
             foreach ($Item in $Items) {
                 # Kiểm tra ngày xóa
                 $DeletedDate = [DateTime]$Item.deletedDateTime
                 
                 if ($DeletedDate -lt $CutoffDate) {
-                    try {
-                        # DELETE /sites/{site-id}/recycleBin/{item-id}
-                        # Đây là hành động purge (xóa vĩnh viễn) trong Graph API
-                        $DeleteUrl = "$RecycleBinUrl/$($Item.id)"
-                        Invoke-RestMethod -Method Delete -Uri $DeleteUrl -Headers $Headers -ErrorAction Stop
-                        
-                        Write-Log -Message "Đã xóa vĩnh viễn: $($Item.name) (Đã xóa $FirstStageRetentionDays+ ngày)" -Level Success
-                        $Stats.FirstStageDeleted++
-                    }
-                    catch {
-                        $Stats.Errors++
-                        Write-Log -Message "Lỗi xóa item $($Item.id): $($_.Exception.Message)" -Level Error
-                    }
+                    $IdsToDelete += $Item.id
                 }
                 else {
                     $Stats.FirstStageKept++
+                }
+            }
+            
+            Write-Log -Message "Số items cần xóa (>$FirstStageRetentionDays ngày): $($IdsToDelete.Count)" -Level Info
+            
+            if ($IdsToDelete.Count -gt 0) {
+                # Thử phương án 1: POST batch delete (theo format fileStorageContainer)
+                try {
+                    # URL delete endpoint
+                    $DeleteUrl = "https://graph.microsoft.com/beta/sites/$SiteId/recyclebin/items/delete"
+                    
+                    # Body chứa mảng IDs
+                    $DeleteBody = @{ ids = $IdsToDelete } | ConvertTo-Json -Compress
+                    
+                    # Headers với Content-Type
+                    $DeleteHeaders = @{
+                        Authorization  = "Bearer $Token"
+                        "Content-Type" = "application/json"
+                    }
+                    
+                    Write-Log -Message "Gọi POST $DeleteUrl với $($IdsToDelete.Count) IDs..." -Level Info
+                    
+                    Invoke-RestMethod -Method Post -Uri $DeleteUrl -Headers $DeleteHeaders -Body $DeleteBody -ErrorAction Stop
+                    
+                    Write-Log -Message "Đã xóa vĩnh viễn $($IdsToDelete.Count) items!" -Level Success
+                    $Stats.FirstStageDeleted = $IdsToDelete.Count
+                }
+                catch {
+                    Write-Log -Message "Lỗi batch delete: $($_.Exception.Message)" -Level Error
+                    
+                    # Nếu batch delete không hoạt động, thử DELETE từng item (fallback)
+                    Write-Log -Message "Thử fallback: DELETE từng item..." -Level Warning
+                    
+                    foreach ($ItemId in $IdsToDelete) {
+                        try {
+                            # Thử format URL khác: /recyclebin/items/{id} (bỏ /items ở cuối RecycleBinUrl)
+                            $SingleDeleteUrl = "https://graph.microsoft.com/beta/sites/$SiteId/recyclebin/items/$ItemId"
+                            Invoke-RestMethod -Method Delete -Uri $SingleDeleteUrl -Headers $Headers -ErrorAction Stop
+                            $Stats.FirstStageDeleted++
+                        }
+                        catch {
+                            $Stats.Errors++
+                        }
+                    }
                 }
             }
         }
