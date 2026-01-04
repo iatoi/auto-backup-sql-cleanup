@@ -139,6 +139,21 @@ auto-backup-sql-cleanup/
 
 ## 🔒 Bảo mật
 
+### Chế độ Bảo mật Nâng cao (DPAPI)
+
+Để tránh lưu mật khẩu dạng plaintext trong `config.json`, hãy sử dụng chế độ setup bảo mật:
+
+```bash
+# 1. Chạy setup (chỉ cần làm 1 lần)
+pwsh -ExecutionPolicy Bypass -File src/AutoClean_SQL.ps1 -SetupSecurity
+
+# 2. Nhập Client Secret và Bot Token khi được hỏi
+# Script sẽ tự động mã hóa và lưu vào file .encrypted
+# File này chỉ có thể được giải mã trên Máy tính này bởi User này.
+```
+
+Sau khi setup, bạn có thể xóa `ClientSecret` và `BotToken` trong `config.json`. Script sẽ tự động ưu tiên đọc file encrypted.
+
 > ⚠️ **KHÔNG commit config.json** - chứa thông tin nhạy cảm!
 
 ```bash
@@ -150,6 +165,10 @@ git commit -m "Remove config"
 ---
 
 ## 📝 Changelog
+
+### v2.3.0 (2026-01-04)
+- 🔒 Thêm chế độ bảo mật `-SetupSecurity` (Windows DPAPI)
+- ✨ Hỗ trợ mã hóa Client Secret & Bot Token
 
 ### v2.2.0 (2026-01-04)
 - ✨ Format Telegram message đẹp hơn với emoji

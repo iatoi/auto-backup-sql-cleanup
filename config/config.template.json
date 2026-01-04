@@ -1,6 +1,7 @@
 {
     "_comment": "=== FILE CẤU HÌNH MẪU CHO AUTO BACKUP SQL CLEANUP ===",
     "_instruction": "Copy file này thành 'config.json' và điền thông tin thực",
+    "_securityMode": "Chay script voi tham so -SetupSecurity de ma hoa credential ma khong can luu trong file nay",
     "_warning": "FILE config.json CHỨA THÔNG TIN NHẠY CẢM - KHÔNG COMMIT LÊN GIT!",
     "AzureAD": {
         "_description": "Thông tin Azure AD App Registration",

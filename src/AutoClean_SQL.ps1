@@ -23,6 +23,11 @@
 
 #Requires -Version 7.0
 
+param (
+    [Parameter(Mandatory = $false)]
+    [switch]$SetupSecurity
+)
+
 # ============================================================
 # PHẦN 1: KHỞI TẠO VÀ CẤU HÌNH
 # ============================================================
@@ -35,9 +40,12 @@ if (-not $ScriptRoot) {
     $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 }
 
-# Đường dẫn tuyệt đối đến file config.json
-# File này PHẢI được tạo từ config.template.json và KHÔNG được commit lên Git
-$ConfigPath = Join-Path (Split-Path $ScriptRoot -Parent) "config\config.json"
+# Đường dẫn file config và encrypted secrets
+$ConfigDir = Join-Path (Split-Path $ScriptRoot -Parent) "config"
+$ConfigPath = Join-Path $ConfigDir "config.json"
+$ClientSecretPath = Join-Path $ConfigDir "client_secret.encrypted"
+$BotTokenPath = Join-Path $ConfigDir "bot_token.encrypted"
+
 
 # Đường dẫn file log - ghi vào thư mục logs cùng cấp với src
 # File log được đặt tên theo ngày để dễ quản lý
@@ -119,6 +127,62 @@ function Write-Log {
 }
 
 # ============================================================
+# HÀM BẢO MẬT (DPAPI)
+# ============================================================
+
+function Save-EncryptedSecret {
+    param (
+        [string]$Path,
+        [SecureString]$Secret
+    )
+    $Secret | ConvertFrom-SecureString | Set-Content -Path $Path
+    Write-Log -Message "Da luu encrypted secret vao: $Path" -Level Success
+}
+
+function Read-EncryptedSecret {
+    param (
+        [string]$Path
+    )
+    if (Test-Path $Path) {
+        try {
+            $EncryptedString = Get-Content -Path $Path -Raw
+            if (-not [string]::IsNullOrWhiteSpace($EncryptedString)) {
+                return $EncryptedString | ConvertTo-SecureString | ConvertFrom-SecureString -AsPlainText
+            }
+        }
+        catch {
+            Write-Log -Message "Loi decrypt file $Path (co the sai user/may): $($_.Exception.Message)" -Level Error
+            return $null
+        }
+    }
+    return $null
+}
+
+# ============================================================
+# LOGIC SETUP SECURITY
+# ============================================================
+
+if ($SetupSecurity) {
+    Write-Log -Message "=== CHE DO CAI DAT BAO MAT (DPAPI) ===" -Level Info
+    Write-Host "Luu y: Du lieu duoc ma hoa theo User va May tinh hien tai." -ForegroundColor Yellow
+    
+    # 1. Nhập Client Secret
+    $ClientInput = Read-Host -Prompt "Nhap Azure AD Client Secret (de trong de bo qua)" -AsSecureString
+    if ($ClientInput) {
+        Save-EncryptedSecret -Path $ClientSecretPath -Secret $ClientInput
+    }
+    
+    # 2. Nhập Bot Token
+    $BotInput = Read-Host -Prompt "Nhap Telegram Bot Token (de trong de bo qua)" -AsSecureString
+    if ($BotInput) {
+        Save-EncryptedSecret -Path $BotTokenPath -Secret $BotInput
+    }
+    
+    Write-Log -Message "Cai dat hoan tat. Vui long xoa secret trong config.json (neu co) va chay lai script chinh." -Level Success
+    exit
+}
+
+# ============================================================
 # PHẦN 3: HÀM ĐỌC CẤU HÌNH
 # ============================================================
 
@@ -155,6 +219,20 @@ function Read-Configuration {
         # Sử dụng -Raw để đọc toàn bộ file thành một string
         $ConfigContent = Get-Content -Path $ConfigFilePath -Raw -Encoding UTF8
         $Config = $ConfigContent | ConvertFrom-Json
+        
+        # Override secrets nếu tìm thấy file encrypted (DPAPI)
+        # Sử dụng $script: scope để truy cập biến global
+        $EncClientSecret = Read-EncryptedSecret -Path $script:ClientSecretPath
+        if ($EncClientSecret) { 
+            $Config.AzureAD.ClientSecret = $EncClientSecret 
+            Write-Log -Message "Su dung ClientSecret tu file ma hoa (DPAPI)" -Level Success
+        }
+        
+        $EncBotToken = Read-EncryptedSecret -Path $script:BotTokenPath
+        if ($EncBotToken) { 
+            $Config.Telegram.BotToken = $EncBotToken 
+            Write-Log -Message "Su dung BotToken tu file ma hoa (DPAPI)" -Level Success
+        }
         
         # Validate các trường bắt buộc
         # Kiểm tra TenantId - rất quan trọng cho Graph API
