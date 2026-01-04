@@ -385,8 +385,9 @@ function Invoke-CloudRecycleBinCleanup {
 
     Write-Log -Message "========== BẮT ĐẦU NHIỆM VỤ B: DỌN DẸP CLOUD (GRAPH API) ==========" -Level Info
     
-    # API Endpoint cho Recycle Bin
-    $RecycleBinUrl = "https://graph.microsoft.com/v1.0/sites/$SiteId/recycleBin"
+    # API Endpoint cho Recycle Bin (BETA endpoint - theo docs Microsoft)
+    # Lưu ý: lowercase 'recyclebin', không phải 'recycleBin'
+    $RecycleBinUrl = "https://graph.microsoft.com/beta/sites/$SiteId/recyclebin/items"
     Write-Log -Message "Debug RecycleBinUrl: [$RecycleBinUrl]" -Level Info
     
     # Dọn dẹp First-Stage
