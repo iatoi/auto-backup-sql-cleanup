@@ -1,47 +1,74 @@
 # 🔄 Auto Backup SQL Cleanup - BFC System
 
-> Tự động hóa vòng đời Backup SQL Server & Dọn dẹp OneDrive
+> Tự động hóa vòng đời Backup SQL Server & Dọn dẹp OneDrive với thông báo Telegram
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-7.0+-blue?logo=powershell)
-![PnP.PowerShell](https://img.shields.io/badge/PnP.PowerShell-Required-green)
+![Microsoft Graph](https://img.shields.io/badge/Microsoft%20Graph-API-green?logo=microsoft)
+![Telegram](https://img.shields.io/badge/Telegram-Bot-blue?logo=telegram)
+![Version](https://img.shields.io/badge/Version-2.1.0-orange)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ## 📋 Mục lục
 
-- [Giới thiệu](#giới-thiệu)
-- [Yêu cầu hệ thống](#yêu-cầu-hệ-thống)
-- [Cài đặt](#cài-đặt)
-- [Cấu hình](#cấu-hình)
-- [Sử dụng](#sử-dụng)
-- [Thiết lập Task Scheduler](#thiết-lập-task-scheduler)
-- [Hướng dẫn Git](#hướng-dẫn-git)
+- [Giới thiệu](#-giới-thiệu)
+- [Tính năng](#-tính-năng)
+- [Yêu cầu hệ thống](#-yêu-cầu-hệ-thống)
+- [Cài đặt](#-cài-đặt)
+- [Cấu hình](#️-cấu-hình)
+- [Sử dụng](#-sử-dụng)
+- [Thiết lập Task Scheduler](#-thiết-lập-task-scheduler)
+- [Cấu trúc thư mục](#-cấu-trúc-thư-mục)
+- [Bảo mật](#-bảo-mật)
 
 ---
 
 ## 📖 Giới thiệu
 
-Script PowerShell giải quyết 2 bài toán chính:
+Script PowerShell tự động hóa việc quản lý backup SQL Server và dọn dẹp OneDrive, giúp tiết kiệm dung lượng và thời gian quản trị.
 
 | Nhiệm vụ | Mô tả |
 |----------|-------|
 | **A. Local Cleanup** | Xóa file backup (.bak, .zip, .7z) cũ hơn 5 tiếng để tiết kiệm ổ cứng |
-| **B. Cloud Cleanup** | Dọn dẹp thùng rác OneDrive qua API để giải phóng dung lượng 1TB |
+| **B. Cloud Cleanup** | Dọn dẹp First-Stage Recycle Bin OneDrive qua Microsoft Graph API |
+| **C. Storage Monitor** | Kiểm tra dung lượng OneDrive, cảnh báo khi > 70% |
+| **D. Telegram Alert** | Gửi thông báo kết quả qua Telegram Bot |
 
-### Logic xử lý Cloud:
+---
 
-1. **Second-Stage Recycle Bin**: Xóa sạch ngay lập tức (Purge)
-2. **First-Stage Recycle Bin**: Chỉ xóa items > 3 ngày, giữ lại items mới để an toàn
+## ✨ Tính năng
+
+### 🗂️ Local Backup Cleanup
+- Tự động xóa file backup cũ theo retention period
+- Hỗ trợ nhiều loại file: `.bak`, `.zip`, `.7z`
+- An toàn: Bỏ qua file đang bị lock
+
+### ☁️ Cloud Recycle Bin Cleanup
+- Sử dụng **Microsoft Graph API** (không cần PnP.PowerShell)
+- **Batch delete** nhanh chóng (xóa hàng trăm items trong vài giây)
+- Retention: Giữ lại items < 3 ngày để phòng khôi phục
+
+### 📊 Storage Monitoring
+- Kiểm tra dung lượng OneDrive qua API
+- Hiển thị: Used / Total (%)
+- Cảnh báo khi vượt ngưỡng (mặc định 70%)
+
+### 📱 Telegram Notification
+- Thông báo tự động sau mỗi lần chạy
+- Hiển thị kết quả cleanup (local + cloud)
+- Icon trạng thái: ✅ SUCCESS / ⚠️ WARNING / ❌ FAILED
+- Cảnh báo dung lượng với icon 🟢/🔴
 
 ---
 
 ## 💻 Yêu cầu hệ thống
 
-- **PowerShell Core 7.0+** - [Download](https://github.com/PowerShell/PowerShell/releases)
-- **Module PnP.PowerShell** - Cài đặt bằng lệnh:
-  ```powershell
-  Install-Module -Name PnP.PowerShell -Scope CurrentUser -Force
-  ```
-- **Azure AD App Registration** - Xem hướng dẫn bên dưới
+| Yêu cầu | Chi tiết |
+|---------|----------|
+| **PowerShell** | Core 7.0+ ([Download](https://github.com/PowerShell/PowerShell/releases)) |
+| **Azure AD App** | Với quyền Microsoft Graph `Sites.FullControl.All` |
+| **Telegram Bot** | Tạo qua @BotFather (tùy chọn) |
+
+> ⚠️ **Lưu ý**: Script **KHÔNG** cần PnP.PowerShell module!
 
 ---
 
@@ -50,22 +77,19 @@ Script PowerShell giải quyết 2 bài toán chính:
 ### 1. Clone repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/auto-backup-sql-cleanup.git
+git clone https://github.com/iatoi/auto-backup-sql-cleanup.git
 cd auto-backup-sql-cleanup
 ```
 
 ### 2. Tạo file cấu hình
 
 ```powershell
-# Copy file template thành config.json
 Copy-Item .\config\config.template.json .\config\config.json
 ```
 
-### 3. Cài đặt PnP.PowerShell (nếu chưa có)
+### 3. Điền thông tin vào config.json
 
-```powershell
-Install-Module -Name PnP.PowerShell -Scope CurrentUser -Force
-```
+Xem phần [Cấu hình](#️-cấu-hình) bên dưới.
 
 ---
 
@@ -75,44 +99,63 @@ Install-Module -Name PnP.PowerShell -Scope CurrentUser -Force
 
 1. Truy cập [Azure Portal](https://portal.azure.com)
 2. Vào **Azure Active Directory** → **App registrations** → **New registration**
-3. Đặt tên app, ví dụ: `OneDrive-Cleanup-App`
-4. Sau khi tạo, copy:
+3. Đặt tên: `AutoClean SQL` (hoặc tên tùy ý)
+4. Copy các giá trị:
    - **Application (client) ID** → `ClientId`
    - **Directory (tenant) ID** → `TenantId`
-5. Vào **Certificates & secrets** → **New client secret** → Copy giá trị → `ClientSecret`
+5. Vào **Certificates & secrets** → **New client secret** → Copy → `ClientSecret`
 
 ### Bước 2: Cấp quyền API
 
-Vào **API permissions** → **Add a permission** → **SharePoint** → **Application permissions**:
+Vào **API permissions** → **Add a permission** → **Microsoft Graph** → **Application permissions**:
 
 | Permission | Mô tả |
 |------------|-------|
-| `Sites.FullControl.All` | Truy cập toàn bộ SharePoint/OneDrive |
+| `Sites.FullControl.All` | Truy cập toàn bộ SharePoint/OneDrive sites |
 
-> ⚠️ **Quan trọng**: Nhấn **Grant admin consent** sau khi thêm quyền!
+> ⚠️ **QUAN TRỌNG**: Nhấn **"Grant admin consent for [Tên Org]"** sau khi thêm quyền!
 
-### Bước 3: Cập nhật config.json
+### Bước 3: Tạo Telegram Bot (Tùy chọn)
 
-Mở file `config/config.json` và điền thông tin thực:
+1. Mở Telegram, tìm **@BotFather**
+2. Gửi `/newbot` và làm theo hướng dẫn
+3. Copy **Bot Token**
+4. Gửi tin nhắn cho bot của bạn
+5. Truy cập: `https://api.telegram.org/bot<TOKEN>/getUpdates`
+6. Tìm `"chat":{"id":XXXXXX}` → đó là **Chat ID**
+
+### Bước 4: Cập nhật config.json
 
 ```json
 {
     "AzureAD": {
-        "TenantId": "12345678-1234-1234-1234-123456789abc",
-        "ClientId": "87654321-4321-4321-4321-cba987654321",
-        "ClientSecret": "your-actual-secret-here"
+        "TenantId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        "ClientId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        "ClientSecret": "your-client-secret"
     },
+    
     "OneDrive": {
-        "SiteUrl": "https://bfc-my.sharepoint.com/personal/thang_bfc_com"
+        "SiteUrl": "https://yourtenant-my.sharepoint.com/personal/username_domain_com"
     },
+    
     "LocalBackup": {
         "Path": "D:\\BFC\\BFC Information - Backup.SQL\\",
         "RetentionMinutes": 300,
         "Extensions": [".bak", ".zip", ".7z"]
     },
+    
     "CloudRecycleBin": {
         "FirstStageRetentionDays": 3,
         "RowLimit": 5000
+    },
+    
+    "Telegram": {
+        "BotToken": "123456789:ABC-DEF...",
+        "ChatId": "987654321"
+    },
+    
+    "StorageAlert": {
+        "WarningThresholdPercent": 70
     }
 }
 ```
@@ -124,14 +167,55 @@ Mở file `config/config.json` và điền thông tin thực:
 ### Chạy thủ công
 
 ```powershell
-pwsh -File .\src\AutoClean_SQL.ps1
+pwsh -ExecutionPolicy Bypass -File .\src\AutoClean_SQL.ps1
 ```
 
-### Kiểm tra cú pháp (không chạy)
+### Output mẫu
 
-```powershell
-# Parse script để kiểm tra lỗi cú pháp
-pwsh -Command "& { $null = [System.Management.Automation.Language.Parser]::ParseFile('.\src\AutoClean_SQL.ps1', [ref]$null, [ref]$null) }"
+```
+╔════════════════════════════════════════════════════════════╗
+║   AUTO BACKUP SQL CLEANUP - BFC SYSTEM (GRAPH API)       ║
+║   Phiên bản: 2.1.0 | Ngày: 2026-01-04 08:30:00           ║
+╚════════════════════════════════════════════════════════════╝
+
+Bước 1: Đọc cấu hình...
+✓ Đã load cấu hình thành công
+
+Bước 2: Thực hiện dọn dẹp Local...
+✓ Đã xóa: 2 files
+
+Bước 3: Thực hiện dọn dẹp Cloud (Microsoft Graph)...
+✓ Đã xóa vĩnh viễn 226 items!
+
+Bước 4: Kiểm tra dung lượng OneDrive...
+Dung lượng: 450 GB / 1024 GB (44%)
+
+╔════════════════════════════════════════════════════════════╗
+║ LOCAL CLEANUP:  Xóa: 2 | Giữ: 10 | Lỗi: 0                ║
+║ CLOUD CLEANUP:  Xóa: 226 | Giữ: 132 | Lỗi: 0             ║
+║ STORAGE: 450 GB / 1024 GB (44%)                          ║
+╚════════════════════════════════════════════════════════════╝
+```
+
+### Telegram Notification mẫu
+
+```
+✅ AUTO BACKUP SQL CLEANUP
+📅 2026-01-04 08:30:00
+
+📁 LOCAL CLEANUP:
+• Đã xóa: 2 files
+• Giữ lại: 10 files
+• Lỗi: 0 files
+
+☁️ CLOUD CLEANUP:
+• Đã xóa: 226 items
+• Giữ lại: 132 items
+• Lỗi: 0 items
+
+💾 DUNG LƯỢNG ONEDRIVE:
+🟢 450 GB / 1024 GB (44%)
+Còn trống: 574 GB
 ```
 
 ---
@@ -144,93 +228,37 @@ pwsh -Command "& { $null = [System.Management.Automation.Language.Parser]::Parse
 taskschd.msc
 ```
 
-### 2. Tạo Basic Task
-
-- **Name**: `Auto Backup SQL Cleanup`
-- **Trigger**: Daily hoặc theo nhu cầu (ví dụ: mỗi 6 tiếng)
-- **Action**: Start a program
-
-### 3. Cấu hình Action
+### 2. Tạo Task mới
 
 | Field | Value |
 |-------|-------|
-| Program/script | `pwsh.exe` |
-| Add arguments | `-ExecutionPolicy Bypass -File "D:\path\to\src\AutoClean_SQL.ps1"` |
-| Start in | `D:\path\to\01. AUTO CONTROL ONEDRIVE BACKUP SQL\` |
+| **Name** | `Auto Backup SQL Cleanup` |
+| **Trigger** | Daily hoặc mỗi 6 tiếng |
+| **Program/script** | `pwsh.exe` |
+| **Arguments** | `-ExecutionPolicy Bypass -File "D:\Scripts\AutoClean_SQL\src\AutoClean_SQL.ps1"` |
+| **Start in** | `D:\Scripts\AutoClean_SQL\` |
 
-### 4. Cấu hình bổ sung
+### 3. Cấu hình bổ sung
 
 - ☑️ Run whether user is logged on or not
 - ☑️ Run with highest privileges
 
 ---
 
-## 📝 Hướng dẫn Git
-
-### Khởi tạo repository mới
-
-```bash
-# Di chuyển vào thư mục dự án
-cd "D:\OneDrive - BFC\Desktop\00.MeOnJobs\00. CODING\02. Auto\01. AUTO CONTROL ONEDRIVE BACKUP SQL"
-
-# Khởi tạo Git repository
-git init
-
-# Thêm tất cả files (config.json sẽ bị ignore tự động)
-git add .
-
-# Kiểm tra status - ĐẢM BẢO config.json KHÔNG có trong danh sách
-git status
-
-# Commit lần đầu
-git commit -m "Initial commit: Auto Backup SQL Cleanup script"
-
-# Thêm remote repository
-git remote add origin https://github.com/YOUR_USERNAME/auto-backup-sql-cleanup.git
-
-# Push lên GitHub
-git push -u origin main
-```
-
-### Kiểm tra bảo mật
-
-```bash
-# Đảm bảo config.json KHÔNG được track
-git status --short
-# Output mong đợi: config/config.json KHÔNG hiển thị (đã bị ignore)
-
-# Xem danh sách files sẽ được commit
-git ls-files
-# Output mong đợi: KHÔNG có config/config.json
-```
-
----
-
 ## 📁 Cấu trúc thư mục
 
 ```
-📁 01. AUTO CONTROL ONEDRIVE BACKUP SQL/
+📁 auto-backup-sql-cleanup/
 ├── 📁 src/
-│   └── AutoClean_SQL.ps1      # Script logic chính
+│   └── AutoClean_SQL.ps1       # Script chính (v2.1.0)
 ├── 📁 config/
-│   ├── config.template.json   # Template (commit lên Git)
-│   └── config.json            # Credentials thực (KHÔNG commit!)
+│   ├── config.template.json    # Template (commit lên Git)
+│   └── config.json             # Credentials thực (KHÔNG commit!)
+├── 📁 logs/
+│   └── cleanup_YYYYMMDD.log    # Log files hàng ngày
 ├── .gitignore                  # Bảo vệ config.json
 └── README.md                   # File này
 ```
-
----
-
-## 🎨 Output Console
-
-Script sử dụng màu sắc để dễ theo dõi:
-
-| Màu | Ý nghĩa |
-|-----|---------|
-| 🟢 Xanh lá | Thành công |
-| 🔴 Đỏ | Lỗi |
-| 🟡 Vàng | Cảnh báo |
-| 🔵 Cyan | Thông tin |
 
 ---
 
@@ -238,13 +266,36 @@ Script sử dụng màu sắc để dễ theo dõi:
 
 > ⚠️ **CẢNH BÁO**: KHÔNG BAO GIỜ commit file `config.json` lên Git!
 
-File `.gitignore` đã được cấu hình để bỏ qua file này. Nếu vô tình commit, hãy:
+### Files được bảo vệ bởi .gitignore:
+- `config/config.json` - Chứa Azure AD secrets
+- `logs/` - Thư mục log
+
+### Nếu vô tình commit config.json:
 
 ```bash
-# Xóa file khỏi Git history (giữ lại file local)
 git rm --cached config/config.json
 git commit -m "Remove sensitive config from tracking"
 ```
+
+### Bảo mật Telegram Bot Token:
+- Nếu token bị lộ, vào @BotFather và gửi `/revoke` để tạo token mới
+
+---
+
+## 📝 Changelog
+
+### v2.1.0 (2026-01-04)
+- ✨ Thêm thông báo Telegram
+- ✨ Thêm kiểm tra dung lượng OneDrive
+- ✨ Cảnh báo khi dung lượng > 70%
+
+### v2.0.0 (2026-01-04)
+- 🔄 Chuyển từ PnP.PowerShell sang Microsoft Graph API
+- ⚡ Batch delete thay vì xóa từng item
+- 📝 Thêm logging ra file
+
+### v1.0.0 (2026-01-03)
+- 🎉 Initial release với PnP.PowerShell
 
 ---
 
