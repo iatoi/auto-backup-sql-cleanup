@@ -787,22 +787,6 @@ $StorageIcon *DUNG LƯỢNG:* $($StorageQuota.RemainingGB) GB còn trống
             }
         }
         
-        # Tạo danh sách files giữ lại trong RECYCLE BIN (< 3 ngày)
-        $KeptFilesSection = ""
-        if ($CloudStats.KeptItemsList -and $CloudStats.KeptItemsList.Count -gt 0) {
-            $KeptFilesSection = "`n`n*🗑 RECYCLE BIN GIỮ LẠI (<3 ngày):*"
-            foreach ($KeptItem in $CloudStats.KeptItemsList) {
-                $ShortName = $KeptItem.Name
-                if ($ShortName.Length -gt 35) {
-                    $ShortName = $ShortName.Substring(0, 32) + "..."
-                }
-                $KeptFilesSection += "`n• $($KeptItem.DeletedDate): $ShortName"
-            }
-            if ($CloudStats.FirstStageKept -gt 10) {
-                $KeptFilesSection += "`n_...và $($CloudStats.FirstStageKept - 10) items khác_"
-            }
-        }
-        
         $TelegramMessage = @"
 $StatusIcon *AUTO BACKUP SQL CLEANUP*
 📅 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
@@ -811,7 +795,6 @@ $StorageSection
 *📁 LOCAL:* Xóa $($LocalStats.Deleted) | Giữ $($LocalStats.Skipped) | Lỗi $($LocalStats.Failed)
 *☁️ CLOUD:* Xóa $($CloudStats.FirstStageDeleted) | Giữ $($CloudStats.FirstStageKept) | Lỗi $($CloudStats.Errors)
 $OneDriveFilesSection
-$KeptFilesSection
 "@
         
         # Thêm cảnh báo nếu dung lượng cao
