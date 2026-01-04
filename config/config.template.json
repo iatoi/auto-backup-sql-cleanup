@@ -1,15 +1,15 @@
 {
     "_comment": "=== FILE CẤU HÌNH MẪU CHO AUTO BACKUP SQL CLEANUP ===",
-    "_instruction": "📋 HƯỚNG DẪN: Copy file này thành 'config.json' và điền thông tin thực",
-    "_warning": "⚠️ FILE config.json CHỨA THÔNG TIN NHẠY CẢM - KHÔNG COMMIT LÊN GIT!",
+    "_instruction": "Copy file này thành 'config.json' và điền thông tin thực",
+    "_warning": "FILE config.json CHỨA THÔNG TIN NHẠY CẢM - KHÔNG COMMIT LÊN GIT!",
     "AzureAD": {
-        "_description": "Thông tin đăng ký Azure AD App Registration",
+        "_description": "Thông tin Azure AD App Registration",
         "TenantId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
         "ClientId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
         "ClientSecret": "your-client-secret-here"
     },
     "OneDrive": {
-        "_description": "URL OneDrive cá nhân hoặc SharePoint site",
+        "_description": "Cấu hình OneDrive",
         "SiteUrl": "https://yourtenant-my.sharepoint.com/personal/username_domain_com",
         "BackupFolderPath": "Backup.SQL"
     },
@@ -24,18 +24,18 @@
         ]
     },
     "CloudRecycleBin": {
-        "_description": "Cấu hình dọn dẹp thùng rác OneDrive",
+        "_description": "Cấu hình dọn dẹp Recycle Bin",
         "FirstStageRetentionDays": 3,
         "RowLimit": 5000
     },
     "Telegram": {
-        "_description": "Cấu hình thông báo Telegram (tạo bot tại @BotFather)",
-        "_howToGetChatId": "Gửi tin nhắn cho bot, sau đó truy cập: https://api.telegram.org/bot<TOKEN>/getUpdates",
-        "BotToken": "your-telegram-bot-token",
+        "_description": "Cấu hình Telegram Bot",
+        "_howTo": "Tạo bot tại @BotFather, lấy ChatId từ /getUpdates",
+        "BotToken": "123456789:ABC-your-bot-token",
         "ChatId": "your-chat-id"
     },
     "StorageAlert": {
-        "_description": "Cảnh báo khi dung lượng OneDrive vượt ngưỡng",
+        "_description": "Cảnh báo dung lượng",
         "WarningThresholdPercent": 70
     }
 }

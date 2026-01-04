@@ -759,46 +759,49 @@ function Invoke-AutoCleanup {
         Write-Log -Message "`nBước 5: Gửi thông báo Telegram..." -Level Info
         
         # Tạo nội dung thông báo
-        $StatusIcon = switch ($ScriptStatus) {
-            "SUCCESS" { "OK" }
-            "WARNING" { "!" }
-            "FAILED" { "X" }
+        $StatusEmoji = switch ($ScriptStatus) {
+            "SUCCESS" { "✅" }
+            "WARNING" { "⚠️" }
+            "FAILED" { "❌" }
         }
+        
+        # Header
+        $Header = "$StatusEmoji BFC SQL BACKUP"
         
         # Dòng 1: Dung lượng còn
-        $Line1 = ""
+        $StorageLine = ""
         if ($StorageQuota) {
-            $Line1 = "[$StatusIcon] Con trong: $($StorageQuota.RemainingGB) GB ($($StorageQuota.UsedPercent)% da dung)"
+            $StorageIcon = if ($StorageQuota.UsedPercent -lt 50) { "🟢" } elseif ($StorageQuota.UsedPercent -lt 80) { "🟡" } else { "🔴" }
+            $StorageLine = "$StorageIcon $($StorageQuota.RemainingGB)GB con ($($StorageQuota.UsedPercent)% used)"
         }
         
-        # Dòng 2: Files trên OneDrive folder
-        $Line2 = ""
+        # Dòng 2: Files trên OneDrive folder (rút gọn)
+        $OneDriveLine = ""
         if ($OneDriveFiles -and $OneDriveFiles.Count -gt 0) {
-            $FileNames = ($OneDriveFiles | ForEach-Object { 
-                    $Name = $_.Name
-                    # Rút gọn tên file: chỉ lấy phần ngày/giờ từ tên backup
-                    if ($Name -match '(\d{8})') { $Matches[1] } else { $Name.Substring(0, [Math]::Min(15, $Name.Length)) }
-                }) -join ", "
-            $Line2 = "OneDrive: $($OneDriveFiles.Count) files ($FileNames)"
+            # Lấy các ngày backup unique
+            $UniqueDates = ($OneDriveFiles | ForEach-Object { 
+                    if ($_.Name -match '(\d{8})') { $Matches[1] } else { "?" }
+                } | Select-Object -Unique) -join ", "
+            $OneDriveLine = "📂 $($OneDriveFiles.Count) files: $UniqueDates"
         }
         else {
-            $Line2 = "OneDrive: Khong lay duoc danh sach"
+            $OneDriveLine = "📂 N/A"
         }
         
         # Dòng 3: Recycle bin status
-        $RecycleStatus = if ($CloudStats.FirstStageKept -gt 0) { "OK - Luu 3 ngay" } else { "Trong" }
-        $Line3 = "Recycle: $($CloudStats.FirstStageKept) files ($RecycleStatus)"
+        $RecycleLine = "🗑️ $($CloudStats.FirstStageKept) items (3-day safe)"
         
         # Ghép message
         $TelegramMessage = @"
-$Line1
-$Line2
-$Line3
+$Header
+$StorageLine
+$OneDriveLine
+$RecycleLine
 "@
         
         # Thêm cảnh báo nếu dung lượng cao
         if ($StorageWarning) {
-            $TelegramMessage += "`n[CANH BAO] Dung luong vuot $WarningThreshold% - Can don Second-Stage Recycle Bin!"
+            $TelegramMessage += "`n⚠️ Storage high! Clean 2nd-stage bin!"
         }
         
         Send-TelegramNotification `
