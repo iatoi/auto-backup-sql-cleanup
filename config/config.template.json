@@ -11,7 +11,7 @@
     "OneDrive": {
         "_description": "URL OneDrive cá nhân hoặc SharePoint site",
         "SiteUrl": "https://yourtenant-my.sharepoint.com/personal/username_domain_com",
-        "BackupFolderPath": "BFC Information - Backup.SQL"
+        "BackupFolderPath": "Backup.SQL"
     },
     "LocalBackup": {
         "_description": "Cấu hình dọn dẹp backup local",
