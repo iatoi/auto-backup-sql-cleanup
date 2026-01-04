@@ -410,6 +410,7 @@ function Invoke-CloudRecycleBinCleanup {
             
             # Thu thập IDs của items cần xóa (đã quá hạn retention)
             $IdsToDelete = @()
+            $KeptItems = @()  # Thu thập thông tin items giữ lại
             
             foreach ($Item in $Items) {
                 # Kiểm tra ngày xóa
@@ -420,8 +421,18 @@ function Invoke-CloudRecycleBinCleanup {
                 }
                 else {
                     $Stats.FirstStageKept++
+                    # Lưu thông tin item giữ lại (tối đa 10 items để không spam)
+                    if ($KeptItems.Count -lt 10) {
+                        $KeptItems += @{
+                            Name        = $Item.name
+                            DeletedDate = $DeletedDate.ToString("dd/MM")
+                        }
+                    }
                 }
             }
+            
+            # Lưu danh sách items giữ lại vào Stats
+            $Stats.KeptItemsList = $KeptItems
             
             Write-Log -Message "Số items cần xóa (>$FirstStageRetentionDays ngày): $($IdsToDelete.Count)" -Level Info
             
@@ -698,37 +709,51 @@ function Invoke-AutoCleanup {
             "FAILED" { "❌" }
         }
         
+        # Bắt đầu với header và DUNG LƯỢNG LÊN ĐẦU
+        $StorageSection = ""
+        if ($StorageQuota) {
+            $StorageIcon = if ($StorageWarning) { "�" } else { "🟢" }
+            $StorageSection = @"
+
+$StorageIcon *DUNG LƯỢNG:* $($StorageQuota.RemainingGB) GB còn trống
+   Đã dùng: $($StorageQuota.UsedGB)/$($StorageQuota.TotalGB) GB ($($StorageQuota.UsedPercent)%)
+"@
+        }
+        
+        # Tạo danh sách files giữ lại (vắn tắt)
+        $KeptFilesSection = ""
+        if ($CloudStats.KeptItemsList -and $CloudStats.KeptItemsList.Count -gt 0) {
+            $KeptFilesSection = "`n`n*📋 FILES GIỮ LẠI (mới nhất):*"
+            foreach ($KeptItem in $CloudStats.KeptItemsList) {
+                # Rút gọn tên file nếu quá dài
+                $ShortName = $KeptItem.Name
+                if ($ShortName.Length -gt 30) {
+                    $ShortName = $ShortName.Substring(0, 27) + "..."
+                }
+                $KeptFilesSection += "`n• $($KeptItem.DeletedDate): $ShortName"
+            }
+            if ($CloudStats.FirstStageKept -gt 10) {
+                $KeptFilesSection += "`n_...và $($CloudStats.FirstStageKept - 10) items khác_"
+            }
+        }
+        
         $TelegramMessage = @"
 $StatusIcon *AUTO BACKUP SQL CLEANUP*
 📅 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+$StorageSection
 
-*📁 LOCAL CLEANUP:*
-• Đã xóa: $($LocalStats.Deleted) files
-• Giữ lại: $($LocalStats.Skipped) files
-• Lỗi: $($LocalStats.Failed) files
-
-*☁️ CLOUD CLEANUP:*
-• Đã xóa: $($CloudStats.FirstStageDeleted) items
-• Giữ lại: $($CloudStats.FirstStageKept) items
-• Lỗi: $($CloudStats.Errors) items
+*📁 LOCAL:* Xóa $($LocalStats.Deleted) | Giữ $($LocalStats.Skipped) | Lỗi $($LocalStats.Failed)
+*☁️ CLOUD:* Xóa $($CloudStats.FirstStageDeleted) | Giữ $($CloudStats.FirstStageKept) | Lỗi $($CloudStats.Errors)
+$KeptFilesSection
 "@
-
-        if ($StorageQuota) {
-            $StorageIcon = if ($StorageWarning) { "🔴" } else { "🟢" }
+        
+        # Thêm cảnh báo nếu dung lượng cao
+        if ($StorageWarning) {
             $TelegramMessage += @"
 
-*💾 DUNG LƯỢNG ONEDRIVE:*
-$StorageIcon $($StorageQuota.UsedGB) GB / $($StorageQuota.TotalGB) GB (*$($StorageQuota.UsedPercent)%*)
-Còn trống: $($StorageQuota.RemainingGB) GB
-"@
-            
-            if ($StorageWarning) {
-                $TelegramMessage += @"
-
 ⚠️ *CẢNH BÁO: DUNG LƯỢNG VƯỢT $WarningThreshold%!*
-👉 Vui lòng vào OneDrive web và dọn *Second-Stage Recycle Bin* ngay!
+👉 Vào OneDrive web dọn *Second-Stage Recycle Bin* ngay!
 "@
-            }
         }
         
         Send-TelegramNotification `
