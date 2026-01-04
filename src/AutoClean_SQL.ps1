@@ -592,7 +592,11 @@ function Get-OneDriveBackupFiles {
         # Lấy danh sách files trong folder (sắp xếp theo lastModifiedDateTime giảm dần)
         $FilesUrl = "https://graph.microsoft.com/v1.0/sites/$SiteId/drive/root:/$BackupFolderPath`:/children?`$top=10&`$orderby=lastModifiedDateTime%20desc&`$select=name,lastModifiedDateTime,size"
         
+        Write-Log -Message "OneDrive Files URL: $FilesUrl" -Level Info
+        
         $Response = Invoke-RestMethod -Method Get -Uri $FilesUrl -Headers $Headers -ErrorAction Stop
+        
+        Write-Log -Message "OneDrive: Tim thay $($Response.value.Count) files trong folder '$BackupFolderPath'" -Level Info
         
         $Files = @()
         foreach ($Item in $Response.value) {
