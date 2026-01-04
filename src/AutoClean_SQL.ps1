@@ -726,11 +726,13 @@ function Invoke-AutoCleanup {
     }
     
     # Bước 5: Lấy danh sách files backup đang có trên OneDrive
+    $BackupFolderPath = if ($Config.OneDrive.BackupFolderPath) { $Config.OneDrive.BackupFolderPath } else { "BFC Information - Backup.SQL" }
     $OneDriveFiles = Get-OneDriveBackupFiles `
         -TenantId $Config.AzureAD.TenantId `
         -ClientId $Config.AzureAD.ClientId `
         -ClientSecret $Config.AzureAD.ClientSecret `
-        -SiteUrl $Config.OneDrive.SiteUrl
+        -SiteUrl $Config.OneDrive.SiteUrl `
+        -BackupFolderPath $BackupFolderPath
         
     # Bước 6: Tổng kết
     Write-Log -Message "`n╔════════════════════════════════════════════════════════════╗" -Level Info
