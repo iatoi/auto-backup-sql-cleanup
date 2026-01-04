@@ -712,7 +712,7 @@ function Invoke-AutoCleanup {
         # Bắt đầu với header và DUNG LƯỢNG LÊN ĐẦU
         $StorageSection = ""
         if ($StorageQuota) {
-            $StorageIcon = if ($StorageWarning) { "�" } else { "🟢" }
+            $StorageIcon = if ($StorageWarning) { "[!]" } else { "[OK]" }
             $StorageSection = @"
 
 $StorageIcon *DUNG LƯỢNG:* $($StorageQuota.RemainingGB) GB còn trống
@@ -720,15 +720,15 @@ $StorageIcon *DUNG LƯỢNG:* $($StorageQuota.RemainingGB) GB còn trống
 "@
         }
         
-        # Tạo danh sách files giữ lại (vắn tắt)
+        # Tạo danh sách files giữ lại trong RECYCLE BIN (< 3 ngày)
         $KeptFilesSection = ""
         if ($CloudStats.KeptItemsList -and $CloudStats.KeptItemsList.Count -gt 0) {
-            $KeptFilesSection = "`n`n*📋 FILES GIỮ LẠI (mới nhất):*"
+            $KeptFilesSection = "`n`n*�️ RECYCLE BIN GIỮ LẠI (<3 ngày):*"
             foreach ($KeptItem in $CloudStats.KeptItemsList) {
                 # Rút gọn tên file nếu quá dài
                 $ShortName = $KeptItem.Name
-                if ($ShortName.Length -gt 30) {
-                    $ShortName = $ShortName.Substring(0, 27) + "..."
+                if ($ShortName.Length -gt 35) {
+                    $ShortName = $ShortName.Substring(0, 32) + "..."
                 }
                 $KeptFilesSection += "`n• $($KeptItem.DeletedDate): $ShortName"
             }
