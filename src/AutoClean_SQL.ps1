@@ -779,27 +779,31 @@ function Invoke-AutoCleanup {
             $StorageLine = "$StorageIcon $($StorageQuota.RemainingGB)GB con ($($StorageQuota.UsedPercent)% used)"
         }
         
-        # Dòng 2: Files trên OneDrive folder (rút gọn)
-        $OneDriveLine = ""
+        # Dòng 2+: Files trên OneDrive folder (chi tiết từng file)
+        $OneDriveSection = ""
         if ($OneDriveFiles -and $OneDriveFiles.Count -gt 0) {
-            # Lấy các ngày backup unique
-            $UniqueDates = ($OneDriveFiles | ForEach-Object { 
-                    if ($_.Name -match '(\d{8})') { $Matches[1] } else { "?" }
-                } | Select-Object -Unique) -join ", "
-            $OneDriveLine = "📂 $($OneDriveFiles.Count) files: $UniqueDates"
+            $OneDriveSection = "📂 ONEDRIVE ($($OneDriveFiles.Count) files):"
+            foreach ($File in $OneDriveFiles) {
+                # Format: ngày giờ - tên file (size)
+                $FileName = $File.Name
+                if ($FileName.Length -gt 30) {
+                    $FileName = $FileName.Substring(0, 27) + "..."
+                }
+                $OneDriveSection += "`n  $($File.Date) $FileName"
+            }
         }
         else {
-            $OneDriveLine = "📂 N/A"
+            $OneDriveSection = "📂 ONEDRIVE: N/A"
         }
         
-        # Dòng 3: Recycle bin status
-        $RecycleLine = "🗑️ $($CloudStats.FirstStageKept) items (3-day safe)"
+        # Dòng cuối: Recycle bin status
+        $RecycleLine = "🗑️ RECYCLE: $($CloudStats.FirstStageKept) items (3-day safe)"
         
         # Ghép message
         $TelegramMessage = @"
 $Header
 $StorageLine
-$OneDriveLine
+$OneDriveSection
 $RecycleLine
 "@
         
