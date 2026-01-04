@@ -779,13 +779,15 @@ $StorageIcon *DUNG LƯỢNG:* $($StorageQuota.RemainingGB) GB còn trống
         # Tạo danh sách files đang có trên OneDrive folder
         $OneDriveFilesSection = ""
         if ($OneDriveFiles -and $OneDriveFiles.Count -gt 0) {
-            $OneDriveFilesSection = "`n`n*📂 BACKUP TRÊN ONEDRIVE:*"
+            $OneDriveFilesSection = "`n`n📂 BACKUP ONEDRIVE:"
             foreach ($File in $OneDriveFiles) {
                 $ShortName = $File.Name
                 if ($ShortName.Length -gt 35) {
                     $ShortName = $ShortName.Substring(0, 32) + "..."
                 }
-                $OneDriveFilesSection += "`n• $($File.Date): $ShortName"
+                # Escape ký tự đặc biệt Markdown: _ * [ ] ( ) ~ ` > # + - = | { } . !
+                $EscapedName = $ShortName -replace '([_*\[\]()~`>#+=|{}.!-])', '\$1'
+                $OneDriveFilesSection += "`n• $($File.Date): $EscapedName"
             }
         }
         
