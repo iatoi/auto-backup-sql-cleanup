@@ -639,9 +639,8 @@ function Send-TelegramNotification {
     try {
         $TelegramUrl = "https://api.telegram.org/bot$BotToken/sendMessage"
         $Body = @{
-            chat_id    = $ChatId
-            text       = $Message
-            parse_mode = $ParseMode
+            chat_id = $ChatId
+            text    = $Message
         }
         
         $Response = Invoke-RestMethod -Method Post -Uri $TelegramUrl -Body $Body -ErrorAction Stop
