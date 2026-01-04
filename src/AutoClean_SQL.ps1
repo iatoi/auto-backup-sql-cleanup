@@ -784,12 +784,14 @@ function Invoke-AutoCleanup {
         if ($OneDriveFiles -and $OneDriveFiles.Count -gt 0) {
             $OneDriveSection = "📂 ONEDRIVE ($($OneDriveFiles.Count) files):"
             foreach ($File in $OneDriveFiles) {
-                # Format: ngày giờ - tên file (size)
+                # Format: ngày giờ - tên file
                 $FileName = $File.Name
                 if ($FileName.Length -gt 30) {
                     $FileName = $FileName.Substring(0, 27) + "..."
                 }
-                $OneDriveSection += "`n  $($File.Date) $FileName"
+                # Escape ký tự đặc biệt Markdown: _ * [ ] ( ) ~ ` > # + - = | { } . !
+                $EscapedName = $FileName -replace '_', ' ' -replace '\.', ' '
+                $OneDriveSection += "`n  $($File.Date) $EscapedName"
             }
         }
         else {
