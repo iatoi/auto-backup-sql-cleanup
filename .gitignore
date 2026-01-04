@@ -9,6 +9,8 @@
 # File chứa Azure AD ClientSecret - TUYỆT ĐỐI KHÔNG COMMIT
 # Lưu ý: File config.json sẽ được tạo local nhưng KHÔNG được track bởi Git
 /config/config.json
+/config/*.encrypted
+
 
 # Backup của file config
 config/*.bak
