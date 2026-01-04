@@ -590,7 +590,8 @@ function Get-OneDriveBackupFiles {
         $Headers = @{ Authorization = "Bearer $Token" }
         
         # Lấy danh sách files trong folder (sắp xếp theo lastModifiedDateTime giảm dần)
-        $FilesUrl = "https://graph.microsoft.com/v1.0/sites/$SiteId/drive/root:/$BackupFolderPath`:/children?`$top=10&`$orderby=lastModifiedDateTime%20desc&`$select=name,lastModifiedDateTime,size"
+        # Lấy top 30 files để đảm bảo quét đủ các unique DB (sắp xếp theo lastModifiedDateTime giảm dần)
+        $FilesUrl = "https://graph.microsoft.com/v1.0/sites/$SiteId/drive/root:/$BackupFolderPath`:/children?`$top=30&`$orderby=lastModifiedDateTime%20desc&`$select=name,lastModifiedDateTime,size"
         
         Write-Log -Message "OneDrive Files URL: $FilesUrl" -Level Info
         
@@ -598,13 +599,36 @@ function Get-OneDriveBackupFiles {
         
         Write-Log -Message "OneDrive: Tim thay $($Response.value.Count) files trong folder '$BackupFolderPath'" -Level Info
         
+        $UniqueDBs = @{}
         $Files = @()
+        
         foreach ($Item in $Response.value) {
-            $Files += @{
-                Name   = $Item.name
-                Date   = ([DateTime]$Item.lastModifiedDateTime).ToString("dd/MM HH:mm")
-                SizeMB = [math]::Round($Item.size / 1MB, 1)
+            $Name = $Item.name
+            
+            # Extract DB Name logic (khá tương tự logic hiển thị nhưng đơn giản hơn để group)
+            # Remove extension, date patterns, common keywords
+            $DbName = $Name -replace '\.(bak|zip|7z)$', '' `
+                -replace '_backup_\d{4}_\d{2}_\d{2}.*$', '' `
+                -replace '_backup_\d{8}.*$', '' `
+                -replace '_\d{8}', '' `
+                -replace '_backup', '' `
+                -replace 'backup', '' `
+                -replace 'Full', '' 
+            
+            # Normalize: replace underscore with space only for display later, here keep simple
+            $DbKey = $DbName.Trim().ToLower()
+            
+            if (-not $UniqueDBs.ContainsKey($DbKey)) {
+                $UniqueDBs[$DbKey] = $true
+                $Files += @{
+                    Name   = $Name
+                    Date   = ([DateTime]$Item.lastModifiedDateTime).ToString("dd/MM HH:mm")
+                    SizeMB = [math]::Round($Item.size / 1MB, 1)
+                }
             }
+            
+            # Chỉ lấy tối đa 10 unique files
+            if ($Files.Count -ge 10) { break }
         }
         
         return $Files
@@ -783,8 +807,10 @@ function Invoke-AutoCleanup {
         if ($OneDriveFiles -and $OneDriveFiles.Count -gt 0) {
             $OneDriveSection = "📂 ONEDRIVE ($($OneDriveFiles.Count) files):"
             foreach ($File in $OneDriveFiles) {
-                # Clean filename: bỏ extension, date, backup keyword
+                # Clean filename: bỏ extension, date format YYYY_MM_DD, backup keyword
                 $CleanName = $File.Name -replace '\.(bak|zip|7z)$', '' `
+                    -replace '_backup_\d{4}_\d{2}_\d{2}.*$', '' `
+                    -replace '_backup_\d{8}.*$', '' `
                     -replace '_\d{8}', '' `
                     -replace '_backup', '' `
                     -replace 'backup', '' `
@@ -792,8 +818,8 @@ function Invoke-AutoCleanup {
                     -replace '_', ' '
                 
                 $CleanName = $CleanName.Trim()
-                if ($CleanName.Length -gt 20) {
-                    $CleanName = $CleanName.Substring(0, 18) + ".."
+                if ($CleanName.Length -gt 25) {
+                    $CleanName = $CleanName.Substring(0, 22) + ".."
                 }
                 
                 $OneDriveSection += "`n  $($File.Date) $CleanName"
