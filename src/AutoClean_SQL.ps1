@@ -498,19 +498,126 @@ function Invoke-CloudRecycleBinCleanup {
 }
 
 # ============================================================
-# PHẦN 6: MAIN SCRIPT EXECUTION
+# PHẦN 6: KIỂM TRA DUNG LƯỢNG ONEDRIVE
+# ============================================================
+
+<#
+.SYNOPSIS
+    Lấy thông tin dung lượng OneDrive qua Graph API
+#>
+function Get-OneDriveStorageQuota {
+    param (
+        $TenantId,
+        $ClientId,
+        $ClientSecret,
+        $SiteUrl
+    )
+    
+    try {
+        # Lấy Token
+        $Token = Get-GraphAccessToken -TenantId $TenantId -ClientId $ClientId -ClientSecret $ClientSecret
+        if (-not $Token) { return $null }
+        
+        # Lấy Site ID
+        $SiteId = Get-GraphSiteId -SiteUrl $SiteUrl -AccessToken $Token
+        if (-not $SiteId) { return $null }
+        $SiteId = "$SiteId".Trim()
+        
+        # Lấy Drive info (chứa quota)
+        $Headers = @{ Authorization = "Bearer $Token" }
+        $DriveUrl = "https://graph.microsoft.com/v1.0/sites/$SiteId/drive"
+        
+        $DriveInfo = Invoke-RestMethod -Method Get -Uri $DriveUrl -Headers $Headers -ErrorAction Stop
+        
+        if ($DriveInfo.quota) {
+            $Used = $DriveInfo.quota.used
+            $Total = $DriveInfo.quota.total
+            $Remaining = $DriveInfo.quota.remaining
+            $UsedPercent = [math]::Round(($Used / $Total) * 100, 1)
+            
+            return @{
+                UsedBytes      = $Used
+                TotalBytes     = $Total
+                RemainingBytes = $Remaining
+                UsedGB         = [math]::Round($Used / 1GB, 2)
+                TotalGB        = [math]::Round($Total / 1GB, 2)
+                RemainingGB    = [math]::Round($Remaining / 1GB, 2)
+                UsedPercent    = $UsedPercent
+            }
+        }
+    }
+    catch {
+        Write-Log -Message "Lỗi lấy thông tin dung lượng: $($_.Exception.Message)" -Level Warning
+    }
+    
+    return $null
+}
+
+# ============================================================
+# PHẦN 7: THÔNG BÁO TELEGRAM
+# ============================================================
+
+<#
+.SYNOPSIS
+    Gửi thông báo qua Telegram Bot
+#>
+function Send-TelegramNotification {
+    param (
+        [string]$BotToken,
+        [string]$ChatId,
+        [string]$Message,
+        [string]$ParseMode = "Markdown"
+    )
+    
+    if ([string]::IsNullOrWhiteSpace($BotToken) -or $BotToken -like "*your-*") {
+        Write-Log -Message "Telegram chưa được cấu hình, bỏ qua gửi thông báo" -Level Warning
+        return $false
+    }
+    
+    try {
+        $TelegramUrl = "https://api.telegram.org/bot$BotToken/sendMessage"
+        $Body = @{
+            chat_id    = $ChatId
+            text       = $Message
+            parse_mode = $ParseMode
+        }
+        
+        $Response = Invoke-RestMethod -Method Post -Uri $TelegramUrl -Body $Body -ErrorAction Stop
+        
+        if ($Response.ok) {
+            Write-Log -Message "Đã gửi thông báo Telegram thành công" -Level Success
+            return $true
+        }
+    }
+    catch {
+        Write-Log -Message "Lỗi gửi Telegram: $($_.Exception.Message)" -Level Error
+    }
+    
+    return $false
+}
+
+# ============================================================
+# PHẦN 8: MAIN SCRIPT EXECUTION
 # ============================================================
 
 function Invoke-AutoCleanup {
     Write-Log -Message "╔════════════════════════════════════════════════════════════╗" -Level Info
     Write-Log -Message "║   AUTO BACKUP SQL CLEANUP - BFC SYSTEM (GRAPH API)       ║" -Level Info
-    Write-Log -Message "║   Phiên bản: 2.0.0 | Ngày: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')    ║" -Level Info
+    Write-Log -Message "║   Phiên bản: 2.1.0 | Ngày: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')    ║" -Level Info
     Write-Log -Message "╚════════════════════════════════════════════════════════════╝" -Level Info
+
+    # Biến theo dõi trạng thái
+    $ScriptStatus = "SUCCESS"
+    $ErrorMessages = @()
 
     # Bước 1: Đọc Config
     Write-Log -Message "Bước 1: Đọc cấu hình..." -Level Info
     $Config = Read-Configuration -ConfigFilePath $ConfigPath
-    if (-not $Config) { return }
+    if (-not $Config) { 
+        $ScriptStatus = "FAILED"
+        $ErrorMessages += "Không thể đọc config"
+        return 
+    }
 
     # Bước 2: Local Cleanup
     Write-Log -Message "`nBước 2: Thực hiện dọn dẹp Local..." -Level Info
@@ -529,8 +636,38 @@ function Invoke-AutoCleanup {
         -SiteUrl $Config.OneDrive.SiteUrl `
         -FirstStageRetentionDays $Config.CloudRecycleBin.FirstStageRetentionDays `
         -RowLimit $Config.CloudRecycleBin.RowLimit
+    
+    if ($CloudStats.Errors -gt 0) {
+        $ScriptStatus = "WARNING"
+        $ErrorMessages += "Cloud cleanup có $($CloudStats.Errors) lỗi"
+    }
+    
+    # Bước 4: Kiểm tra dung lượng OneDrive
+    Write-Log -Message "`nBước 4: Kiểm tra dung lượng OneDrive..." -Level Info
+    
+    $StorageQuota = Get-OneDriveStorageQuota `
+        -TenantId $Config.AzureAD.TenantId `
+        -ClientId $Config.AzureAD.ClientId `
+        -ClientSecret $Config.AzureAD.ClientSecret `
+        -SiteUrl $Config.OneDrive.SiteUrl
+    
+    $StorageWarning = $false
+    $WarningThreshold = 70
+    if ($Config.StorageAlert -and $Config.StorageAlert.WarningThresholdPercent) {
+        $WarningThreshold = $Config.StorageAlert.WarningThresholdPercent
+    }
+    
+    if ($StorageQuota) {
+        Write-Log -Message "Dung lượng: $($StorageQuota.UsedGB) GB / $($StorageQuota.TotalGB) GB ($($StorageQuota.UsedPercent)%)" -Level Info
         
-    # Bước 4: Tổng kết
+        if ($StorageQuota.UsedPercent -ge $WarningThreshold) {
+            $StorageWarning = $true
+            $ScriptStatus = "WARNING"
+            Write-Log -Message "⚠️ CẢNH BÁO: Dung lượng đã vượt $WarningThreshold%! Cần dọn Second-Stage Recycle Bin!" -Level Warning
+        }
+    }
+        
+    # Bước 5: Tổng kết
     Write-Log -Message "`n╔════════════════════════════════════════════════════════════╗" -Level Info
     Write-Log -Message "║                    TỔNG KẾT KẾT QUẢ                        ║" -Level Info
     Write-Log -Message "╠════════════════════════════════════════════════════════════╣" -Level Info
@@ -542,10 +679,65 @@ function Invoke-AutoCleanup {
     Write-Log -Message "║ CLOUD CLEANUP:                                             ║" -Level Info
     Write-Log -Message "║   - Đã xóa: $($CloudStats.FirstStageDeleted) items         ║" -Level Info
     Write-Log -Message "║   - Giữ lại: $($CloudStats.FirstStageKept) items           ║" -Level Info
+    if ($StorageQuota) {
+        Write-Log -Message "╠════════════════════════════════════════════════════════════╣" -Level Info
+        Write-Log -Message "║ STORAGE: $($StorageQuota.UsedGB) GB / $($StorageQuota.TotalGB) GB ($($StorageQuota.UsedPercent)%)     ║" -Level Info
+    }
     Write-Log -Message "╚════════════════════════════════════════════════════════════╝" -Level Info
     
     Write-Log -Message "`nScript hoàn thành lúc $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Level Success
+    
+    # Bước 6: Gửi thông báo Telegram
+    if ($Config.Telegram -and $Config.Telegram.BotToken) {
+        Write-Log -Message "`nBước 5: Gửi thông báo Telegram..." -Level Info
+        
+        # Tạo nội dung thông báo
+        $StatusIcon = switch ($ScriptStatus) {
+            "SUCCESS" { "✅" }
+            "WARNING" { "⚠️" }
+            "FAILED" { "❌" }
+        }
+        
+        $TelegramMessage = @"
+$StatusIcon *AUTO BACKUP SQL CLEANUP*
+📅 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+
+*📁 LOCAL CLEANUP:*
+• Đã xóa: $($LocalStats.Deleted) files
+• Giữ lại: $($LocalStats.Skipped) files
+• Lỗi: $($LocalStats.Failed) files
+
+*☁️ CLOUD CLEANUP:*
+• Đã xóa: $($CloudStats.FirstStageDeleted) items
+• Giữ lại: $($CloudStats.FirstStageKept) items
+• Lỗi: $($CloudStats.Errors) items
+"@
+
+        if ($StorageQuota) {
+            $StorageIcon = if ($StorageWarning) { "🔴" } else { "🟢" }
+            $TelegramMessage += @"
+
+*💾 DUNG LƯỢNG ONEDRIVE:*
+$StorageIcon $($StorageQuota.UsedGB) GB / $($StorageQuota.TotalGB) GB (*$($StorageQuota.UsedPercent)%*)
+Còn trống: $($StorageQuota.RemainingGB) GB
+"@
+            
+            if ($StorageWarning) {
+                $TelegramMessage += @"
+
+⚠️ *CẢNH BÁO: DUNG LƯỢNG VƯỢT $WarningThreshold%!*
+👉 Vui lòng vào OneDrive web và dọn *Second-Stage Recycle Bin* ngay!
+"@
+            }
+        }
+        
+        Send-TelegramNotification `
+            -BotToken $Config.Telegram.BotToken `
+            -ChatId $Config.Telegram.ChatId `
+            -Message $TelegramMessage
+    }
 }
 
 # --- CHẠY MAIN FUNCTION ---
 Invoke-AutoCleanup
+
