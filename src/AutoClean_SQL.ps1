@@ -391,8 +391,8 @@ function Invoke-CloudRecycleBinCleanup {
     
     # Dọn dẹp First-Stage
     try {
-        # Sử dụng format string để an toàn hơn
-        $QueryUrl = "{0}?`$top={1}&`$orderby=deletedDateTime%20desc" -f $RecycleBinUrl, $RowLimit
+        # Đơn giản hóa query để debug lỗi 400: Bỏ orderby
+        $QueryUrl = "{0}?`$top={1}" -f $RecycleBinUrl, $RowLimit
         Write-Log -Message "Query URL: [$QueryUrl]" -Level Info
         
         $Response = Invoke-RestMethod -Method Get -Uri $QueryUrl -Headers $Headers -ErrorAction Stop
@@ -435,6 +435,17 @@ function Invoke-CloudRecycleBinCleanup {
     }
     catch {
         Write-Log -Message "Lỗi khi lấy danh sách Recycle Bin: $($_.Exception.Message)" -Level Error
+        
+        # Đọc chi tiết lỗi từ Response Stream (quan trọng cho Graph API)
+        if ($_.Exception.Response) {
+            try {
+                $Reader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
+                $ErrorBody = $Reader.ReadToEnd()
+                Write-Log -Message "CHI TIẾT LỖI TỪ API: $ErrorBody" -Level Error
+            }
+            catch {}
+        }
+
         if ($_.Exception.Response.StatusCode -eq "Forbidden") {
             Write-Log -Message "GỢI Ý: Kiểm tra lại quyền API 'Sites.FullControl.All' trong Azure Portal (API Permissions)." -Level Warning
             Write-Log -Message "Lưu ý: User-delegated permissions không hoạt động ở đây, phải là APPLICATION permissions." -Level Info
