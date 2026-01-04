@@ -760,54 +760,45 @@ function Invoke-AutoCleanup {
         
         # Tạo nội dung thông báo
         $StatusIcon = switch ($ScriptStatus) {
-            "SUCCESS" { "✅" }
-            "WARNING" { "⚠️" }
-            "FAILED" { "❌" }
+            "SUCCESS" { "OK" }
+            "WARNING" { "!" }
+            "FAILED" { "X" }
         }
         
-        # Bắt đầu với header và DUNG LƯỢNG LÊN ĐẦU
-        $StorageSection = ""
+        # Dòng 1: Dung lượng còn
+        $Line1 = ""
         if ($StorageQuota) {
-            $StorageIcon = if ($StorageWarning) { "[!]" } else { "[OK]" }
-            $StorageSection = @"
-
-$StorageIcon *DUNG LƯỢNG:* $($StorageQuota.RemainingGB) GB còn trống
-   Đã dùng: $($StorageQuota.UsedGB)/$($StorageQuota.TotalGB) GB ($($StorageQuota.UsedPercent)%)
-"@
+            $Line1 = "[$StatusIcon] Con trong: $($StorageQuota.RemainingGB) GB ($($StorageQuota.UsedPercent)% da dung)"
         }
         
-        # Tạo danh sách files đang có trên OneDrive folder
-        $OneDriveFilesSection = ""
+        # Dòng 2: Files trên OneDrive folder
+        $Line2 = ""
         if ($OneDriveFiles -and $OneDriveFiles.Count -gt 0) {
-            $OneDriveFilesSection = "`n`n📂 BACKUP ONEDRIVE:"
-            foreach ($File in $OneDriveFiles) {
-                $ShortName = $File.Name
-                if ($ShortName.Length -gt 35) {
-                    $ShortName = $ShortName.Substring(0, 32) + "..."
-                }
-                # Escape ký tự đặc biệt Markdown: _ * [ ] ( ) ~ ` > # + - = | { } . !
-                $EscapedName = $ShortName -replace '([_*\[\]()~`>#+=|{}.!-])', '\$1'
-                $OneDriveFilesSection += "`n• $($File.Date): $EscapedName"
-            }
+            $FileNames = ($OneDriveFiles | ForEach-Object { 
+                    $Name = $_.Name
+                    # Rút gọn tên file: chỉ lấy phần ngày/giờ từ tên backup
+                    if ($Name -match '(\d{8})') { $Matches[1] } else { $Name.Substring(0, [Math]::Min(15, $Name.Length)) }
+                }) -join ", "
+            $Line2 = "OneDrive: $($OneDriveFiles.Count) files ($FileNames)"
+        }
+        else {
+            $Line2 = "OneDrive: Khong lay duoc danh sach"
         }
         
+        # Dòng 3: Recycle bin status
+        $RecycleStatus = if ($CloudStats.FirstStageKept -gt 0) { "OK - Luu 3 ngay" } else { "Trong" }
+        $Line3 = "Recycle: $($CloudStats.FirstStageKept) files ($RecycleStatus)"
+        
+        # Ghép message
         $TelegramMessage = @"
-$StatusIcon *AUTO BACKUP SQL CLEANUP*
-📅 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-$StorageSection
-
-*📁 LOCAL:* Xóa $($LocalStats.Deleted) | Giữ $($LocalStats.Skipped) | Lỗi $($LocalStats.Failed)
-*☁️ CLOUD:* Xóa $($CloudStats.FirstStageDeleted) | Giữ $($CloudStats.FirstStageKept) | Lỗi $($CloudStats.Errors)
-$OneDriveFilesSection
+$Line1
+$Line2
+$Line3
 "@
         
         # Thêm cảnh báo nếu dung lượng cao
         if ($StorageWarning) {
-            $TelegramMessage += @"
-
-⚠️ *CẢNH BÁO: DUNG LƯỢNG VƯỢT $WarningThreshold%!*
-👉 Vào OneDrive web dọn *Second-Stage Recycle Bin* ngay!
-"@
+            $TelegramMessage += "`n[CANH BAO] Dung luong vuot $WarningThreshold% - Can don Second-Stage Recycle Bin!"
         }
         
         Send-TelegramNotification `
