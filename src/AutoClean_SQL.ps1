@@ -622,7 +622,7 @@ function Get-OneDriveBackupFiles {
                 $UniqueDBs[$DbKey] = $true
                 $Files += @{
                     Name   = $Name
-                    Date   = ([DateTime]$Item.lastModifiedDateTime).ToString("dd/MM HH:mm")
+                    Date   = ([DateTime]$Item.lastModifiedDateTime).ToLocalTime().ToString("dd/MM HH:mm")
                     SizeMB = [math]::Round($Item.size / 1MB, 1)
                 }
             }
