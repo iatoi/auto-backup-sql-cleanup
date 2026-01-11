@@ -134,15 +134,30 @@ pwsh -ExecutionPolicy Bypass -File src\AutoClean_SQL.ps1
 
 ## 7. 📱 Giải thích thông báo Telegram
 
-Sau khi chạy xong, Telegram sẽ nhận được tin nhắn dạng:
+Script sẽ gửi thông báo với 2 cấp độ cảnh báo:
 
-```
-✅ BFC SQL BACKUP             <-- Trạng thái tổng (✅ OK, ⚠️ Cảnh báo, ❌ Lỗi)
-🟢 850.5GB con (15% used)     <-- Dung lượng OneDrive (Xanh/Vàng/Đỏ tùy mức độ đầy)
-📂 ONEDRIVE (10 files):        <-- Danh sách file backup mới nhất trên Cloud
+### A. Trạng thái Bình thường (Normal)
+Dung lượng sử dụng < 80%. Giao diện xanh/vàng thân thiện.
+
+```text
+✅ BFC SQL BACKUP
+🟢 Used: 103.5GB / 1024GB (10%)
+📂 ONEDRIVE (10 files):
   04/01 10:30 BFCHEM APP
   04/01 10:30 BFCHEM SYS
-🗑️ RECYCLE: 134 items (3-day safe) <-- Số lượng rác đang chờ xử lý
+🗑️ RECYCLE: 134 items (3-day safe)
+```
+
+### B. Trạng thái Cảnh báo Nóng (Critical)
+Dung lượng sử dụng ≥ 80%. Giao diện chuyển sang chế độ báo động (Fire/Siren).
+
+```text
+🚨 STORAGE CRITICAL - BFC BACKUP [CRITICAL]
+🔥 FULL: 850GB/1024GB (83%)
+⚠️ ACTION: SAP HET DUNG LUONG! CAN VAO XOA RECYCLE BIN THU CONG NGAY!
+📂 ONEDRIVE (10 files):
+  ...
+🗑️ RECYCLE: 5000+ items
 ```
 
 ---

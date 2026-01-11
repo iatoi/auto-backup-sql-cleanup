@@ -145,7 +145,7 @@ function Read-EncryptedSecret {
     )
     if (Test-Path $Path) {
         try {
-            $EncryptedString = Get-Content -Path $Path -Raw
+            $EncryptedString = (Get-Content -Path $Path -Raw).Trim()
             if (-not [string]::IsNullOrWhiteSpace($EncryptedString)) {
                 return $EncryptedString | ConvertTo-SecureString | ConvertFrom-SecureString -AsPlainText
             }
