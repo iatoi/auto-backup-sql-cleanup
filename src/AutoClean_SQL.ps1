@@ -876,8 +876,17 @@ function Invoke-AutoCleanup {
         # Dòng 1: Dung lượng còn
         $StorageLine = ""
         if ($StorageQuota) {
-            $StorageIcon = if ($StorageQuota.UsedPercent -lt 50) { "🟢" } elseif ($StorageQuota.UsedPercent -lt 80) { "🟡" } else { "🔴" }
-            $StorageLine = "$StorageIcon Used: $($StorageQuota.UsedGB)GB / $($StorageQuota.TotalGB)GB ($($StorageQuota.UsedPercent)%)"
+            # Nếu dung lượng >= 80% -> CẢNH BÁO MẠNH (Hot Alert)
+            if ($StorageQuota.UsedPercent -ge 80) {
+                $Header = "🚨 STORAGE CRITICAL - BFC BACKUP"
+                $StorageLine = "🔥 FULL: $($StorageQuota.UsedGB)/$($StorageQuota.TotalGB)GB ($($StorageQuota.UsedPercent)%)"
+                $StorageLine += "`n⚠️ ACTION: SAP HET DUNG LUONG! CAN VAO XOA RECYCLE BIN THU CONG NGAY!"
+            }
+            else {
+                # Bình thường
+                $StorageIcon = if ($StorageQuota.UsedPercent -lt 50) { "🟢" } elseif ($StorageQuota.UsedPercent -lt 80) { "🟡" } else { "🔴" }
+                $StorageLine = "$StorageIcon Used: $($StorageQuota.UsedGB)GB / $($StorageQuota.TotalGB)GB ($($StorageQuota.UsedPercent)%)"
+            }
         }
         
         # Dòng 2+: Files trên OneDrive folder (chi tiết từng file)
