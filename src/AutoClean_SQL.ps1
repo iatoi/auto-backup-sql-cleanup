@@ -877,7 +877,7 @@ function Invoke-AutoCleanup {
         $StorageLine = ""
         if ($StorageQuota) {
             $StorageIcon = if ($StorageQuota.UsedPercent -lt 50) { "🟢" } elseif ($StorageQuota.UsedPercent -lt 80) { "🟡" } else { "🔴" }
-            $StorageLine = "$StorageIcon $($StorageQuota.RemainingGB)GB con ($($StorageQuota.UsedPercent)% used)"
+            $StorageLine = "$StorageIcon Used: $($StorageQuota.UsedGB)GB / $($StorageQuota.TotalGB)GB ($($StorageQuota.UsedPercent)%)"
         }
         
         # Dòng 2+: Files trên OneDrive folder (chi tiết từng file)
