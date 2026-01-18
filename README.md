@@ -5,7 +5,7 @@
 ![PowerShell](https://img.shields.io/badge/PowerShell-7.0+-blue?logo=powershell)
 ![Microsoft Graph](https://img.shields.io/badge/Microsoft%20Graph-API-green?logo=microsoft)
 ![Telegram](https://img.shields.io/badge/Telegram-Bot-blue?logo=telegram)
-![Version](https://img.shields.io/badge/Version-2.2.0-orange)
+![Version](https://img.shields.io/badge/Version-2.2.1-orange)
 
 ---
 
@@ -15,7 +15,7 @@
 |-----------|-------|
 | **Local Cleanup** | Xóa file backup cũ (>.5h) trên ổ cứng |
 | **Cloud Cleanup** | Dọn Recycle Bin OneDrive qua Graph API |
-| **Storage Monitor** | Kiểm tra dung lượng OneDrive |
+| **Storage Monitor** | Kiểm tra dung lượng OneDrive (Active + Recycle Bin) |
 | **Telegram Alert** | Gửi thông báo tóm tắt sau mỗi lần chạy |
 
 ---
@@ -165,6 +165,10 @@ git commit -m "Remove config"
 ---
 
 ## 📝 Changelog
+
+### v2.2.1 (2026-01-19)
+- 🐛 FIX: OneDrive Storage Quota tính thiếu dung lượng Recycle Bin
+- 🔧 UPDATE: Sử dụng endpoint `/users/{email}/drive` để lấy tổng dung lượng chính xác (khớp Web UI)
 
 ### v2.3.0 (2026-01-04)
 - 🔒 Thêm chế độ bảo mật `-SetupSecurity` (Windows DPAPI)

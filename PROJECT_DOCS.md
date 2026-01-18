@@ -1,7 +1,7 @@
 # 📘 TÀI LIỆU HƯỚNG DẪN CHI TIẾT: AUTO BACKUP SQL & ONEDRIVE CLEANUP
 
-**Phiên bản:** 2.3.0
-**Ngày cập nhật:** 11/01/2026
+**Phiên bản:** 2.2.1
+**Ngày cập nhật:** 19/01/2026
 **Tác giả:** BFC DevOps Team
 
 ---
@@ -13,7 +13,7 @@ Công cụ **AutoBackupSQL-Cleanup** là giải pháp tự động hóa giúp qu
 ### Các tính năng chính:
 *   **Dọn dẹp Local (Local Cleanup)**: Tự động xóa các file backup cũ trên ổ cứng server (mặc định > 5 giờ) để giải phóng không gian.
 *   **Dọn dẹp Cloud (Cloud Cleanup)**: Sử dụng Microsoft Graph API để xóa vĩnh viễn các file trong thùng rác OneDrive (Second-Stage Recycle Bin) và các file cũ quá hạn (mặc định > 3 ngày).
-*   **Giám sát dung lượng (Storage Monitor)**: Cảnh báo khi dung lượng OneDrive vượt ngưỡng cho phép (mặc định 70%).
+*   **Giám sát dung lượng (Storage Monitor)**: Cảnh báo khi dung lượng OneDrive vượt ngưỡng cho phép (mặc định 70%). **Lưu ý:** Dung lượng tính toán bao gồm cả **Active Files** và **Recycle Bin** để khớp với hiển thị trên OneDrive Web UI.
 *   **Thông báo thông minh (Telegram Alert)**: Gửi báo cáo chi tiết về tình trạng backup, danh sách file mới nhất và trạng thái dọn dẹp qua Telegram ngay sau khi chạy.
 *   **Bảo mật nâng cao (Security)**: Hỗ trợ mã hóa thông tin nhạy cảm (Client Secret, Bot Token) theo chuẩn DPAPI, tránh lưu trữ dạng văn bản thuần.
 

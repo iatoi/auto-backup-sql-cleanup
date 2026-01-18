@@ -593,6 +593,15 @@ function Invoke-CloudRecycleBinCleanup {
 <#
 .SYNOPSIS
     Lấy thông tin dung lượng OneDrive qua Graph API
+    
+.DESCRIPTION
+    Hàm này lấy ĐÚNG quota của OneDrive for Business personal site
+    bằng cách sử dụng endpoint /users/{userPrincipalName}/drive
+    
+    UPDATE v2.2:
+    - OneDrive Web UI hiển thị Used = Active Files + Recycle Bin (Deleted)
+    - Graph API trả về riêng: quota.used (Active) và quota.deleted (Recycle Bin)
+    - Cần cộng dồn để khớp với hiển thị 103.7GB của user
 #>
 function Get-OneDriveStorageQuota {
     param (
@@ -607,28 +616,65 @@ function Get-OneDriveStorageQuota {
         $Token = Get-GraphAccessToken -TenantId $TenantId -ClientId $ClientId -ClientSecret $ClientSecret
         if (-not $Token) { return $null }
         
-        # Lấy Site ID
-        $SiteId = Get-GraphSiteId -SiteUrl $SiteUrl -AccessToken $Token
-        if (-not $SiteId) { return $null }
-        $SiteId = "$SiteId".Trim()
-        
-        # Lấy Drive info (chứa quota)
         $Headers = @{ Authorization = "Bearer $Token" }
-        $DriveUrl = "https://graph.microsoft.com/v1.0/sites/$SiteId/drive"
+        
+        # QUAN TRỌNG: Trích xuất email từ SiteUrl của OneDrive for Business
+        $UserPrincipalName = $null
+        
+        if ($SiteUrl -match "/personal/([^/]+)") {
+            $PersonalPath = $Matches[1]
+            $Parts = $PersonalPath -split "_"
+            
+            if ($Parts.Count -ge 3) {
+                $User = $Parts[0..($Parts.Count - 3)] -join "_" 
+                $Domain = $Parts[-2]
+                $Tld = $Parts[-1]
+                $UserPrincipalName = "$User@$Domain.$Tld"
+            }
+            elseif ($Parts.Count -eq 2) {
+                $UserPrincipalName = $Parts[0] + "@" + $Parts[1]
+            }
+        }
+        
+        # Gọi API đúng endpoint
+        if ($UserPrincipalName) {
+            $DriveUrl = "https://graph.microsoft.com/v1.0/users/$UserPrincipalName/drive"
+            Write-Log -Message "Checking Storage for User: $UserPrincipalName" -Level Info
+        }
+        else {
+            $SiteId = Get-GraphSiteId -SiteUrl $SiteUrl -AccessToken $Token
+            if (-not $SiteId) { return $null }
+            $SiteId = "$SiteId".Trim()
+            $DriveUrl = "https://graph.microsoft.com/v1.0/sites/$SiteId/drive"
+        }
         
         $DriveInfo = Invoke-RestMethod -Method Get -Uri $DriveUrl -Headers $Headers -ErrorAction Stop
         
         if ($DriveInfo.quota) {
-            $Used = $DriveInfo.quota.used
+            # Tính toán lại theo logic OneDrive Web UI
+            # Web UI Used = Used (Active) + Deleted (Recycle Bin)
+            $ActiveUsed = $DriveInfo.quota.used
+            $DeletedUsed = if ($DriveInfo.quota.deleted) { $DriveInfo.quota.deleted } else { 0 }
+            
+            $TotalUsed = $ActiveUsed + $DeletedUsed
             $Total = $DriveInfo.quota.total
             $Remaining = $DriveInfo.quota.remaining
-            $UsedPercent = [math]::Round(($Used / $Total) * 100, 1)
+            $UsedPercent = [math]::Round(($TotalUsed / $Total) * 100, 1)
+            
+            Write-Log -Message "STORAGE DETAIL:" -Level Info
+            Write-Log -Message "  - Active Files: $([math]::Round($ActiveUsed/1GB, 2)) GB" -Level Info
+            Write-Log -Message "  - Recycle Bin:  $([math]::Round($DeletedUsed/1GB, 2)) GB (Chiếm $([math]::Round(($DeletedUsed/$TotalUsed)*100,1))% dung lượng sử dụng)" -Level Info
+            Write-Log -Message "  - TOTAL USED:   $([math]::Round($TotalUsed/1GB, 2)) GB (Khớp Web UI)" -Level Info
             
             return @{
-                UsedBytes      = $Used
+                UsedBytes      = $TotalUsed
+                ActiveBytes    = $ActiveUsed
+                DeletedBytes   = $DeletedUsed
                 TotalBytes     = $Total
                 RemainingBytes = $Remaining
-                UsedGB         = [math]::Round($Used / 1GB, 2)
+                UsedGB         = [math]::Round($TotalUsed / 1GB, 2)
+                ActiveGB       = [math]::Round($ActiveUsed / 1GB, 2)
+                DeletedGB      = [math]::Round($DeletedUsed / 1GB, 2)
                 TotalGB        = [math]::Round($Total / 1GB, 2)
                 RemainingGB    = [math]::Round($Remaining / 1GB, 2)
                 UsedPercent    = $UsedPercent
@@ -637,6 +683,13 @@ function Get-OneDriveStorageQuota {
     }
     catch {
         Write-Log -Message "Lỗi lấy thông tin dung lượng: $($_.Exception.Message)" -Level Warning
+        if ($_.Exception.Response) {
+            try {
+                $Reader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
+                Write-Log -Message "API Error: $($Reader.ReadToEnd())" -Level Warning
+            }
+            catch {}
+        }
     }
     
     return $null
